@@ -87,6 +87,7 @@ export const TABLES = {
       // syncSchemaFromTables() on boot; existing rows read as unrestricted (0).
       accessRestricted: "INTEGER DEFAULT 0",
       accessAllow: "TEXT",
+      allowedEndpoints: "TEXT",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },

@@ -1,3 +1,4 @@
+import { getKeyAccessContext, enforceEndpointAccess } from "@/sse/services/keyAccess.js";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -73,6 +74,8 @@ export function estimateAnthropicInputTokens(body = {}) {
  * POST /v1/messages/count_tokens - Mock token count response
  */
 export async function POST(request) {
+  const endpointDenied = enforceEndpointAccess(await getKeyAccessContext(request));
+  if (endpointDenied) return endpointDenied;
   let body;
   try {
     body = await request.json();

@@ -29,11 +29,15 @@ import { resolveProviderId } from "@/shared/constants/providers.js";
 import {
   KEY_ACCESS_COMBO_OWNER,
   KEY_ACCESS_PROVIDER_AS_MODEL_KINDS,
+  ENDPOINT_SCOPES,
+  endpointDeniedMessage,
   keyAccessDeniedMessage,
 } from "@/shared/constants/keyAccess.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
+
+export { ENDPOINT_SCOPES };
 
 const lower = (s) => String(s).toLowerCase();
 const canonicalModel = (provider, model) => lower(`${provider}/${model}`);
@@ -71,13 +75,51 @@ export async function getKeyAccessContext(request) {
   const apiKey = extractClientApiKey(request);
   if (!apiKey) return null;
   const record = await getApiKeyByKey(apiKey);
-  if (!record?.access?.restricted) return null;
+  const allowedEndpoints = record?.allowedEndpoints || [];
+  const modelRestricted = !!record?.access?.restricted;
+  if (!modelRestricted && allowedEndpoints.length === 0) return null;
   return {
     keyId: record.id,
     keyName: record.name || record.id,
-    allow: record.access.allow || [],
+    modelRestricted,
+    allow: record.access?.allow || [],
+    allowedEndpoints,
+    pathname: normalizePathname(request),
     _sets: null,
   };
+}
+
+function normalizePathname(request) {
+  try {
+    return new URL(request.url).pathname.replace(/^\/api(?=\/v1)/, "").replace(/\/+$/, "") || "/";
+  } catch {
+    return "";
+  }
+}
+
+const underPath = (pathname, prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+
+/**
+ * Per-key endpoint gate. Entries are scope ids (ENDPOINT_SCOPES) or raw "/v1/..."
+ * path prefixes. Empty list = unrestricted. `endpointOrRequest` defaults to the
+ * path captured in the context; pass a Request or a path string to override.
+ * @returns {Response|null} 403 when the key may not call this endpoint.
+ */
+export function enforceEndpointAccess(ctx, endpointOrRequest) {
+  if (!ctx?.allowedEndpoints?.length) return null;
+  const pathname = typeof endpointOrRequest === "string"
+    ? endpointOrRequest
+    : endpointOrRequest ? normalizePathname(endpointOrRequest) : ctx.pathname;
+  const ok = ctx.allowedEndpoints.some((entry) => {
+    const prefixes = ENDPOINT_SCOPES[entry]?.paths || (entry.startsWith("/") ? [entry.replace(/\/+$/, "")] : []);
+    return prefixes.some((p) => underPath(pathname, p));
+  });
+  if (ok) return null;
+  log.warn("AUTH", `key-access: key "${ctx.keyName}" denied endpoint "${pathname}"`);
+  return Response.json(
+    { error: { message: endpointDeniedMessage(pathname), type: "permission_error", code: "endpoint_not_allowed" } },
+    { status: HTTP_STATUS.FORBIDDEN }
+  );
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
@@ -122,6 +164,9 @@ export function keyAccessDeniedResponse(ctx, requested) {
  */
 export async function enforceKeyAccess(ctx, requested) {
   if (!ctx) return null;
+  const endpointDenied = enforceEndpointAccess(ctx);
+  if (endpointDenied) return endpointDenied;
+  if (!ctx.modelRestricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const comboModels = await getComboModels(requested);
@@ -139,6 +184,9 @@ export async function enforceKeyAccess(ctx, requested) {
  */
 export async function enforceKeyAccessResolved(ctx, requested, provider, model) {
   if (!ctx) return null;
+  const endpointDenied = enforceEndpointAccess(ctx);
+  if (endpointDenied) return endpointDenied;
+  if (!ctx.modelRestricted) return null;
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
@@ -151,6 +199,9 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
  */
 export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx) return null;
+  const endpointDenied = enforceEndpointAccess(ctx);
+  if (endpointDenied) return endpointDenied;
+  if (!ctx.modelRestricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const allowed = comboModels
@@ -166,7 +217,7 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
  * model just shortens the fallback list, so combo failover is unaffected.
  */
 export async function filterAdapterModels(ctx, augmented, original) {
-  if (!ctx || !Array.isArray(augmented)) return augmented;
+  if (!ctx?.modelRestricted || !Array.isArray(augmented)) return augmented;
   const keep = new Set(original || []);
   const out = [];
   for (const m of augmented) {
@@ -178,7 +229,7 @@ export async function filterAdapterModels(ctx, augmented, original) {
 
 /** /v1/models: a restricted key sees only the combos and models it may call. */
 export async function filterModelsListForKey(ctx, list) {
-  if (!ctx || !Array.isArray(list)) return list;
+  if (!ctx?.modelRestricted || !Array.isArray(list)) return list;
   const sets = await getAllowSets(ctx);
   const out = [];
   for (const entry of list) {

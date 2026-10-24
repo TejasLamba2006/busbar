@@ -4,6 +4,8 @@ import {
   KEY_ACCESS_MAX_ENTRIES,
   KEY_ACCESS_MAX_ENTRY_LENGTH,
   KEY_ACCESS_UNRESTRICTED,
+  ENDPOINT_SCOPES,
+  ENDPOINT_MAX_ENTRIES,
 } from "@/shared/constants/keyAccess.js";
 
 /**
@@ -77,4 +79,27 @@ export function validateKeyAccessInput(input) {
     return { ok: false, error: `access.allow entries must be at most ${KEY_ACCESS_MAX_ENTRY_LENGTH} characters` };
   }
   return { ok: true, value: { restricted: input.restricted, allow: normalizeAllowList(allow) } };
+}
+
+/** Validate client input for allowedEndpoints: array of scope ids or "/v1/..." paths. */
+export function validateAllowedEndpointsInput(input) {
+  if (!Array.isArray(input) || input.some((e) => typeof e !== "string")) {
+    return { ok: false, error: "allowedEndpoints must be an array of strings" };
+  }
+  const list = normalizeAllowList(input);
+  if (list.length > ENDPOINT_MAX_ENTRIES) return { ok: false, error: `allowedEndpoints has more than ${ENDPOINT_MAX_ENTRIES} entries` };
+  const bad = list.find((e) => !(e in ENDPOINT_SCOPES) && !/^\/v1(beta)?(\/|$)/.test(e));
+  if (bad) return { ok: false, error: `allowedEndpoints: unknown endpoint "${bad}"` };
+  return { ok: true, value: list };
+}
+
+/** Parse the allowedEndpoints column. Corrupt JSON fails closed to a deny-all sentinel. */
+export function endpointsFromColumn(col) {
+  if (typeof col !== "string" || !col) return [];
+  try {
+    const list = normalizeAllowList(JSON.parse(col));
+    return list;
+  } catch {
+    return ["__invalid__"];
+  }
 }

@@ -1,3 +1,4 @@
+import { getKeyAccessContext, enforceEndpointAccess } from "@/sse/services/keyAccess.js";
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
@@ -84,6 +85,8 @@ export async function OPTIONS() {
 
 // GET /v1/models/info?id={alias}/{modelId} — metadata for a single model
 export async function GET(request) {
+  const endpointDenied = enforceEndpointAccess(await getKeyAccessContext(request));
+  if (endpointDenied) return endpointDenied;
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const kind = searchParams.get("kind");

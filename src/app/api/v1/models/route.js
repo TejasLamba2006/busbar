@@ -10,7 +10,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getProviderNodes, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
-import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
+import { getKeyAccessContext, filterModelsListForKey, enforceEndpointAccess } from "@/sse/services/keyAccess.js";
 import { getDisabledModelIds } from "@/sse/services/modelVisibility.js";
 import { getLiveCatalogSnapshot, requestLiveCatalogRefresh } from "@/lib/modelCatalog/liveCatalogs.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
@@ -472,6 +472,8 @@ export async function OPTIONS() {
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
+  const endpointDenied = enforceEndpointAccess(await getKeyAccessContext(request));
+  if (endpointDenied) return endpointDenied;
   try {
     const data = await filterModelsListForKey(
       await getKeyAccessContext(request),

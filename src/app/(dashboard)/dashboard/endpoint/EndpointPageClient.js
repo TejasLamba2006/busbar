@@ -675,6 +675,25 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  // Save a key's endpoint restrictions ([] = all endpoints).
+  const handleUpdateKeyEndpoints = async (id, allowedEndpoints) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedEndpoints }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, allowedEndpoints: data.key.allowedEndpoints } : k));
+      } else {
+        console.log("Error updating key endpoints:", data.error || res.status);
+      }
+    } catch (error) {
+      console.log("Error updating key endpoints:", error);
+    }
+  };
+
   // Save a key's access (restricted flag + allow list).
   const handleUpdateKeyAccess = async (id, access) => {
     try {
@@ -1056,8 +1075,14 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {(key.allowedEndpoints?.length > 0) && (
+                    <span className="mt-1 inline-block rounded-xl border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                      {key.allowedEndpoints.length} endpoint{key.allowedEndpoints.length === 1 ? "" : "s"}
+                    </span>
+                  )}
                   <KeyAccessControls
                     apiKey={key}
+                    onEndpointsChange={(list) => handleUpdateKeyEndpoints(key.id, list)}
                     onChange={(access) => handleUpdateKeyAccess(key.id, access)}
                     onRequestRestrict={() => setConfirmState({
                       title: "Restrict API Key",

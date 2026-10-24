@@ -7,8 +7,11 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Toggle, ModelSelectModal } from "@/shared/components";
+import { ENDPOINT_SCOPES } from "@/shared/constants/keyAccess.js";
 
-export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict }) {
+export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict, onEndpointsChange }) {
+  const endpoints = apiKey.allowedEndpoints || [];
+  const toggleEndpoint = (id) => onEndpointsChange(endpoints.includes(id) ? endpoints.filter((e) => e !== id) : [...endpoints, id]);
   const access = apiKey.access || { restricted: false, allow: [] };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeProviders, setActiveProviders] = useState([]);
@@ -68,6 +71,27 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict 
           </button>
         </div>
       )}
+      <div className="mt-2" data-testid="key-endpoint-access">
+        <Toggle
+          size="sm"
+          checked={endpoints.length > 0}
+          label={endpoints.length > 0 ? `Restricted to ${endpoints.length} endpoint${endpoints.length === 1 ? "" : "s"}` : "All endpoints (unrestricted)"}
+          onChange={(checked) => onEndpointsChange(checked ? ["chat"] : [])}
+        />
+        {endpoints.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {Object.entries(ENDPOINT_SCOPES).map(([id, scope]) => (
+              <label key={id} className="flex cursor-pointer items-center gap-1 rounded-xl border border-primary/30 px-2 py-0.5 text-xs text-text-main">
+                <input type="checkbox" checked={endpoints.includes(id)} onChange={() => toggleEndpoint(id)} />
+                {scope.label}
+              </label>
+            ))}
+            {endpoints.filter((e) => !(e in ENDPOINT_SCOPES)).map((raw) => (
+              <span key={raw} className="rounded-xl border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-xs">{raw}</span>
+            ))}
+          </div>
+        )}
+      </div>
       {pickerOpen && (
         <ModelSelectModal
           isOpen={pickerOpen}
@@ -89,8 +113,10 @@ KeyAccessControls.propTypes = {
   apiKey: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string,
+    allowedEndpoints: PropTypes.arrayOf(PropTypes.string),
     access: PropTypes.shape({ restricted: PropTypes.bool, allow: PropTypes.arrayOf(PropTypes.string) }),
   }).isRequired,
   onChange: PropTypes.func.isRequired,
   onRequestRestrict: PropTypes.func.isRequired,
+  onEndpointsChange: PropTypes.func.isRequired,
 };
