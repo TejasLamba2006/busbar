@@ -30,7 +30,6 @@ import { resolveClinepassModels, resolveClineModels } from "open-sse/services/cl
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveFreepiModels } from "open-sse/services/freepiModels.js";
 import { resolveFreebuffModels } from "open-sse/services/freebuffModels.js";
-import { FREEBUFF_AGENTS } from "open-sse/providers/registry/freebuff.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
@@ -69,7 +68,7 @@ function resolveQoderLiveModels(conn, provider) {
 
 const LIVE_MODEL_RESOLVERS = {
   freepi: async () => resolveFreepiModels(),
-  freebuff: async (conn) => resolveFreebuffModels(conn.accessToken || conn.apiKey, Object.keys(FREEBUFF_AGENTS)),
+  freebuff: async (conn) => resolveFreebuffModels(conn.accessToken || conn.apiKey),
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,

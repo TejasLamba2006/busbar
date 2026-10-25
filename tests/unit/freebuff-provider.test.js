@@ -8,20 +8,32 @@ vi.mock("open-sse/utils/proxyFetch.js", async (orig) => ({
 
 const { PROVIDERS } = await import("open-sse/config/providers.js");
 const { AI_PROVIDERS, ALIAS_TO_ID } = await import("@/shared/constants/providers.js");
-const { FreebuffExecutor, resetFreebuffForTests } = await import("open-sse/executors/freebuff.js");
+const { FreebuffExecutor, resetFreebuffForTests, withBuffySystem } = await import("open-sse/executors/freebuff.js");
 const registry = (await import("open-sse/providers/registry/freebuff.js")).default;
-const { FREEBUFF_AGENTS } = await import("open-sse/providers/registry/freebuff.js");
+const svcMod = await import("open-sse/services/freebuffModels.js");
 const freebuffOauth = (await import("@/lib/oauth/providers/freebuff.js")).default;
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 let fetchMock;
+const CATALOG = {
+  protocol: 1, version: "v", issuedAt: 5, refreshAt: 9, plansUrl: "x", fetchId: "fetch-1",
+  rows: [
+    { key: "m-aaaa", handle: "fbm1.glm", displayName: "GLM 5.3 Flash", access: "open", legacyDigests: [svcMod.legacyDigest("z-ai/glm-5.3-flash")] },
+    { key: "m-bbbb", handle: "fbm1.sol", displayName: "GPT-6.1 Sol", access: "locked" },
+    { key: "m-cccc", handle: "fbm1.new", displayName: "Brand New", access: "open" },
+    { key: "m-dddd", handle: "fbm1.soon", displayName: "Soon", access: "open", opensAt: 99 },
+  ],
+};
+
 beforeEach(() => {
   resetFreebuffForTests();
+  svcMod.resetFreebuffModelsForTests();
   proxyFetchMock.mockReset();
   fetchMock = vi.fn(async (url) => {
     const u = String(url);
+    if (u.endsWith("/freebuff/models")) return json(CATALOG);
     if (u.endsWith("/session/admission")) return json({ status: "active", instanceId: "cli:abc", expiresAt: new Date(Date.now() + 3600e3).toISOString() });
     if (u.endsWith("/agent-runs")) return json({ runId: "run-1" });
     return json({});
@@ -30,32 +42,70 @@ beforeEach(() => {
 });
 
 describe("freebuff registry", () => {
-  it("registers with alias fb and an agent for every model", () => {
+  it("registers with alias fb, a unique slug id per model, and a risk warning", () => {
     expect(AI_PROVIDERS.freebuff).toBeDefined();
     expect(PROVIDERS.freebuff).toBeDefined();
     expect(ALIAS_TO_ID.fb).toBe("freebuff");
-    for (const m of registry.models) expect(FREEBUFF_AGENTS[m.id]).toMatch(/^base3-(fast-)?free-/);
+    expect(new Set(registry.models.map((m) => m.id)).size).toBe(registry.models.length);
+    expect(registry.models.length).toBeGreaterThan(40);
+    expect(registry.display.deprecated).toBe(true);
+    expect(registry.display.deprecationNotice).not.toContain("—");
   });
 });
 
 describe("FreebuffExecutor", () => {
   const creds = { accessToken: "tok-1" };
-  const args = { model: "z-ai/glm-5.3-flash", body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: creds };
+  const args = { model: "glm-5.3-flash", body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: creds };
 
   it("admits a session, starts a run, and injects codebuff_metadata + bearer", async () => {
     proxyFetchMock.mockResolvedValue(json({ ok: true }));
     const { response } = await new FreebuffExecutor().execute(args);
     expect(response.status).toBe(200);
     const adm = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/session/admission"));
-    expect(adm[1].headers["x-freebuff-model"]).toBe("z-ai/glm-5.3-flash");
+    expect(adm[1].headers["x-freebuff-model"]).toBe("fbm1.glm");
+    expect(adm[1].headers["x-freebuff-catalog-fetch"]).toBe("fetch-1");
     expect(adm[1].headers.Authorization).toBe("Bearer tok-1");
     const run = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/agent-runs"));
-    expect(JSON.parse(run[1].body).agentId).toBe("base3-free-glm-5-3-flash");
+    expect(JSON.parse(run[1].body).agentId).toBe("base3-free-catalog");
     const [url, init] = proxyFetchMock.mock.calls[0];
     expect(String(url)).toBe("https://www.codebuff.com/api/v1/chat/completions");
     expect(init.headers.Authorization).toBe("Bearer tok-1");
+    expect(init.headers["x-freebuff-sse-gzip-recovery"]).toBe("1");
+    expect(init.headers["x-freebuff-catalog-fetch"]).toBe("fetch-1");
     const body = JSON.parse(init.body);
+    expect(body.model).toBe("fbm1.glm");
+    expect(body.messages[0]).toEqual({ role: "system", content: "You are Buffy, the coding agent behind Codebuff." });
     expect(body.codebuff_metadata).toMatchObject({ run_id: "run-1", cost_mode: "free", freebuff_instance_id: "cli:abc" });
+  });
+
+  it("accepts legacy model ids, rejects locked or unknown ones", async () => {
+    proxyFetchMock.mockResolvedValue(json({ ok: true }));
+    const ex = new FreebuffExecutor();
+    expect((await ex.execute({ ...args, model: "z-ai/glm-5.3-flash" })).response.status).toBe(200);
+    expect((await ex.execute({ ...args, model: "gpt-6.1-sol" })).response.status).toBe(404);
+    expect((await ex.execute({ ...args, model: "soon" })).response.status).toBe(404);
+    expect((await ex.execute({ ...args, model: "brand-new" })).response.status).toBe(200);
+  });
+
+  it("releases the held session on 409 purchase_capacity and re-admits", async () => {
+    let n = 0;
+    fetchMock.mockImplementation(async (url, init) => {
+      const u = String(url);
+      if (u.endsWith("/freebuff/models")) return json(CATALOG);
+      if (u.endsWith("/session/admission")) return n++ === 0 ? json({ status: "purchase_capacity", currentInstanceId: "cli:old" }, 409) : json({ status: "active", instanceId: "cli:new" });
+      if (u.endsWith("/agent-runs")) return json({ runId: "r2" });
+      return json({});
+    });
+    proxyFetchMock.mockResolvedValue(json({ ok: true }));
+    expect((await new FreebuffExecutor().execute(args)).response.status).toBe(200);
+    const del = fetchMock.mock.calls.find((c) => c[1].method === "DELETE");
+    expect(del[1].headers["x-freebuff-instance-id"]).toBe("cli:old");
+  });
+
+  it("collapses client system messages behind the Buffy prefix", () => {
+    const out = withBuffySystem([{ role: "system", content: "A" }, { role: "developer", content: [{ type: "text", text: "B" }] }, { role: "user", content: "x" }, { role: "system", content: "late" }]);
+    expect(out.map((m) => m.role)).toEqual(["system", "user", "system"]);
+    expect(out[0].content).toBe("You are Buffy, the coding agent behind Codebuff.\n\nA\n\nB");
   });
 
   it("reuses the session across requests", async () => {
@@ -67,7 +117,9 @@ describe("FreebuffExecutor", () => {
   });
 
   it("returns the admission refusal without calling chat", async () => {
-    fetchMock.mockImplementation(async () => json({ status: "rate_limited", message: "daily limit" }, 200));
+    fetchMock.mockImplementation(async (url) =>
+      String(url).endsWith("/freebuff/models") ? json(CATALOG) : json({ status: "rate_limited", message: "daily limit" }, 200),
+    );
     const { response } = await new FreebuffExecutor().execute(args);
     expect(response.status).toBe(403);
     expect((await response.json()).error.message).toBe("daily limit");
@@ -129,42 +181,26 @@ describe("freebuff device signing + catalog", () => {
     fetchMock.mockImplementation(async (url) => {
       const u = String(url);
       if (u.endsWith("/device-keys")) return json({ keyId: "k2" });
+      if (u.endsWith("/freebuff/models")) return json(CATALOG);
       if (u.endsWith("/session/admission")) return json({ status: "active", instanceId: "cli:z" });
       if (u.endsWith("/agent-runs")) return json({ runId: "r" });
       return json({});
     });
     proxyFetchMock.mockResolvedValue(json({ ok: true }));
-    await new FreebuffExecutor().execute({ model: "z-ai/glm-5.3-flash", body: { messages: [] }, stream: false, credentials: { accessToken: "t2" } });
+    await new FreebuffExecutor().execute({ model: "glm-5.3-flash", body: { messages: [] }, stream: false, credentials: { accessToken: "t2" } });
     const adm = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/session/admission"));
     expect(adm[1].headers["x-freebuff-device-sig"]).toBeTruthy();
     expect(proxyFetchMock.mock.calls[0][1].headers["x-freebuff-device-key"]).toBe("k2");
   });
 
-  it("resolves the live catalog via legacy digests, skips locked rows, falls back to null", async () => {
+  it("lists unlocked, opened rows as slug ids and falls back to null", async () => {
     const os = await import("node:os"), path = await import("node:path");
-    const svc = await import("open-sse/services/freebuffModels.js");
-    svc.resetFreebuffModelsForTests(path.join(os.tmpdir(), `fb-key3-${Date.now()}.json`));
-    fetchMock.mockImplementation(async (url) => {
-      const u = String(url);
-      if (u.endsWith("/device-keys")) return json({ keyId: "k3" });
-      return json({
-        protocol: 1, version: "v", issuedAt: 1, refreshAt: 2, plansUrl: "x", fetchId: "f",
-        rows: [
-          { key: "a", handle: "fbm1.a", displayName: "GLM Live", access: "open", legacyDigests: [svc.legacyDigest("z-ai/glm-5.3-flash")] },
-          { key: "b", handle: "fbm1.b", displayName: "Locked", access: "locked", legacyDigests: [svc.legacyDigest("openai/gpt-6.1-sol")] },
-          { key: "c", handle: "fbm1.c", displayName: "Unknown", access: "open", legacyDigests: ["deadbeefdeadbeef"] },
-        ],
-      });
-    });
-    const live = await svc.resolveFreebuffModels("t3", Object.keys(FREEBUFF_AGENTS));
-    expect(live.models).toEqual([{ id: "z-ai/glm-5.3-flash", name: "GLM Live" }]);
-    svc.resetFreebuffModelsForTests();
+    svcMod.resetFreebuffModelsForTests(path.join(os.tmpdir(), `fb-key3-${Date.now()}.json`));
+    fetchMock.mockImplementation(async (url) => (String(url).endsWith("/device-keys") ? json({ keyId: "k3" }) : json(CATALOG)));
+    const live = await svcMod.resolveFreebuffModels("t3");
+    expect(live.models).toEqual([{ id: "glm-5.3-flash", name: "GLM 5.3 Flash" }, { id: "brand-new", name: "Brand New" }]);
+    svcMod.resetFreebuffModelsForTests();
     fetchMock.mockImplementation(async () => json({}, 404));
-    expect(await svc.resolveFreebuffModels("t3", Object.keys(FREEBUFF_AGENTS))).toBeNull();
-  });
-
-  it("has 12 models, each with an agent", () => {
-    expect(registry.models.length).toBe(12);
-    for (const m of registry.models) expect(FREEBUFF_AGENTS[m.id]).toMatch(/^base3-/);
+    expect(await svcMod.resolveFreebuffModels("t3")).toBeNull();
   });
 });

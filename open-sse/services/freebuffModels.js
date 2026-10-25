@@ -102,8 +102,9 @@ export function freebuffDeviceHeaders(token, { method, url, body = "", fetchId =
 }
 
 /**
- * Live catalog: GET /api/v1/freebuff/models (signed). Rows are legacy-id-less handles, so the
- * model id is taken from the static registry via legacyDigests (FNV digest of the legacy id).
+ * Live catalog: GET /api/v1/freebuff/models (signed). Rows carry an opaque, per-fetch `handle`
+ * that goes wherever a model id used to (x-freebuff-model, chat `model`). Busbar model ids are
+ * slugs of the display name; ids from the old static list still resolve through legacyDigests.
  */
 export function legacyDigest(modelId) {
   const input = `freebuff-legacy-model:${modelId}`;
@@ -117,8 +118,10 @@ export function legacyDigest(modelId) {
   return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
 }
 
-async function loadCatalog(token, knownIds) {
-  if (catalogCache && Date.now() - catalogCache.at < TTL_MS) return catalogCache;
+const slug = (name) => String(name).toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^-+|-+$/g, "");
+
+async function loadCatalog(token, force = false) {
+  if (!force && catalogCache && Date.now() - catalogCache.at < TTL_MS) return catalogCache;
   if (inflight) return inflight;
   inflight = (async () => {
     const stale = catalogCache;
@@ -137,17 +140,20 @@ async function loadCatalog(token, knownIds) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const cat = await res.json();
       if (cat?.protocol !== 1 || !Array.isArray(cat.rows)) throw new Error("not a catalog");
-      const byDigest = new Map(knownIds.map((id) => [legacyDigest(id), id]));
       const issuedAt = cat.issuedAt ?? Date.now();
-      const models = [];
+      const seen = new Set();
+      const rows = [];
       for (const row of cat.rows) {
-        if (row.access === "locked" || (row.opensAt !== undefined && row.opensAt > issuedAt)) continue;
-        const id = (row.legacyDigests || []).map((d) => byDigest.get(d)).find(Boolean);
-        if (id) models.push({ id, name: row.displayName });
+        if (!row.handle || !row.displayName) continue;
+        let id = slug(row.displayName);
+        if (seen.has(id)) id += `-${String(row.key || "").replace(/^m-/, "").slice(0, 4)}`;
+        seen.add(id);
+        const locked = row.access === "locked" || (row.opensAt !== undefined && row.opensAt > issuedAt);
+        rows.push({ id, name: row.displayName, handle: row.handle, locked, digests: row.legacyDigests || [] });
       }
-      catalogCache = { at: Date.now(), models, fetchId: cat.fetchId || "" };
+      catalogCache = { at: Date.now(), rows, fetchId: cat.fetchId || "" };
     } catch {
-      catalogCache = { at: Date.now(), models: stale?.models || [], fetchId: stale?.fetchId || "" };
+      catalogCache = { at: Date.now(), rows: stale?.rows || [], fetchId: stale?.fetchId || "" };
     } finally {
       inflight = null;
     }
@@ -156,11 +162,32 @@ async function loadCatalog(token, knownIds) {
   return inflight;
 }
 
-/** Live models (restricted to ids the executor can map to a root agent) or null -> static fallback. */
-export async function resolveFreebuffModels(token, knownIds) {
+/** Unlocked live models or null -> static fallback. */
+export async function resolveFreebuffModels(token) {
   if (!token) return null;
-  const { models } = await loadCatalog(token, knownIds);
+  const { rows } = await loadCatalog(token);
+  const models = rows.filter((r) => !r.locked).map((r) => ({ id: r.id, name: r.name }));
   return models.length ? { models } : null;
+}
+
+/** Live { handle, fetchId, name } for a model id (slug or legacy id), refetching once if unknown; null if absent or locked. */
+export async function resolveFreebuffRow(token, modelId) {
+  const find = (c) => {
+    const d = legacyDigest(modelId);
+    return c.rows.find((r) => r.id === modelId) || c.rows.find((r) => r.digests.includes(d));
+  };
+  let cat = await loadCatalog(token);
+  let row = find(cat);
+  if (!row) {
+    cat = await loadCatalog(token, true);
+    row = find(cat);
+  }
+  return row && !row.locked ? { handle: row.handle, fetchId: cat.fetchId, name: row.name } : null;
+}
+
+/** Drop the cached catalog so the next call refetches (stale handle). */
+export function invalidateFreebuffCatalog() {
+  catalogCache = null;
 }
 
 export function resetFreebuffModelsForTests(file) {
