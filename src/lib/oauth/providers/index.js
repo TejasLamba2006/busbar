@@ -9,6 +9,7 @@ import codex from "./codex.js";
 import xai from "./xai.js";
 import grokCli from "./grok-cli.js";
 import freepi from "./freepi.js";
+import freebuff from "./freebuff.js";
 import muse from "./muse.js";
 import geminiCli from "./gemini-cli.js";
 import antigravity from "./antigravity.js";
@@ -41,6 +42,7 @@ const PROVIDERS = {
   xai,
   "grok-cli": grokCli,
   freepi,
+  freebuff,
   muse,
   "gemini-cli": geminiCli,
   antigravity,

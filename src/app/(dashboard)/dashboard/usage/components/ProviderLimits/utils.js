@@ -693,6 +693,7 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "freebuff":
       case "freepi":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {

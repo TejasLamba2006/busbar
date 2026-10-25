@@ -125,6 +125,7 @@ const OAUTH_TEST_CONFIG = {
     },
     refreshable: false,
   },
+  freebuff: { url: "https://www.codebuff.com/api/v1/me?fields=email", method: "GET", authHeader: "Authorization", authPrefix: "Bearer ", refreshable: false },
   freepi: { url: "https://api.freepi.ai/me", method: "GET", authHeader: "Authorization", authPrefix: "Bearer ", refreshable: false },
   // Grok CLI / Grok Build — probe /v1/user (no inference quota). Headers mirror official CLI.
   "grok-cli": {
@@ -792,6 +793,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "freebuff": {
+        const res = await fetchWithConnectionProxy("https://www.codebuff.com/api/v1/me?fields=email", { headers: { Authorization: `Bearer ${connection.apiKey || connection.accessToken}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid or expired Freebuff token" };
       }
       case "freepi": {
         const res = await fetchWithConnectionProxy("https://api.freepi.ai/me", { headers: { Authorization: `Bearer ${connection.apiKey || connection.accessToken}` } }, effectiveProxy);

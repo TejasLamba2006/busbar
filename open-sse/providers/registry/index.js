@@ -296,6 +296,7 @@ import p301 from "./zenmux.js";
 import p302 from "./zerolimitai.js";
 import p303 from "./zylo-api.js";
 import p304 from "./freepi.js";
+import p305 from "./freebuff.js";
 export default [
   p0,
   p1,
@@ -593,4 +594,5 @@ export default [
   p302,
   p303,
   p304,
+  p305,
 ];
