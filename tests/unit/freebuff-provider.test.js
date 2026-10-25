@@ -74,7 +74,8 @@ describe("FreebuffExecutor", () => {
     expect(init.headers["x-freebuff-catalog-fetch"]).toBe("fetch-1");
     const body = JSON.parse(init.body);
     expect(body.model).toBe("fbm1.glm");
-    expect(body.messages[0]).toEqual({ role: "system", content: "You are Buffy, the coding agent behind Codebuff." });
+    expect(body.messages[0].role).toBe("system");
+    expect(body.messages[0].content).toContain("You are Buffy, the coding agent behind Codebuff. You help users");
     expect(body.codebuff_metadata).toMatchObject({ run_id: "run-1", cost_mode: "free", freebuff_instance_id: "cli:abc" });
   });
 
@@ -105,7 +106,8 @@ describe("FreebuffExecutor", () => {
   it("collapses client system messages behind the Buffy prefix", () => {
     const out = withBuffySystem([{ role: "system", content: "A" }, { role: "developer", content: [{ type: "text", text: "B" }] }, { role: "user", content: "x" }, { role: "system", content: "late" }]);
     expect(out.map((m) => m.role)).toEqual(["system", "user", "system"]);
-    expect(out[0].content).toBe("You are Buffy, the coding agent behind Codebuff.\n\nA\n\nB");
+    expect(out[0].content.startsWith("You are Buffy, the coding agent behind Codebuff. You help users")).toBe(true);
+    expect(out[0].content.endsWith(".\n\nA\n\nB")).toBe(true);
   });
 
   it("reuses the session across requests", async () => {
@@ -125,6 +127,16 @@ describe("FreebuffExecutor", () => {
     expect((await response.json()).error.message).toBe("daily limit");
     expect(proxyFetchMock).not.toHaveBeenCalled();
   });
+
+  it("drops the cached session after a 503 refunded start", async () => {
+    proxyFetchMock.mockImplementation(async () => json({ error: { code: 503 } }, 503));
+    const ex = new FreebuffExecutor();
+    expect((await ex.execute(args)).response.status).toBe(503);
+    proxyFetchMock.mockReset();
+    proxyFetchMock.mockResolvedValue(json({ ok: true }));
+    expect((await ex.execute(args)).response.status).toBe(200);
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).endsWith("/session/admission")).length).toBe(2);
+  }, 30000);
 
   it("re-admits once when chat says the session ended", async () => {
     proxyFetchMock

@@ -14,6 +14,12 @@ const TIMEOUT_MS = 20000;
 const SESSION_ERR_RE = /session_|superseded|expired|model_mismatch|no_active|session_required|catalog_stale|stale/i;
 // Free mode only accepts requests whose single leading system message is the Buffy prompt.
 const BUFFY_PREFIX = "You are Buffy, the coding agent behind Codebuff.";
+// A prompt that is only the prefix is answered 503 "model temporarily unavailable" (and the start is refunded);
+// the real base3 opening sentence plus date is enough.
+const buffyIntro = () =>
+  `${BUFFY_PREFIX} You help users with software engineering tasks: fixing bugs, adding functionality, refactoring, and explaining code.
+
+Current date: ${new Date().toISOString().slice(0, 10)}.`;
 const UA = "ai-sdk/openai-compatible/0.0.0-test/codebuff ai-sdk/provider-utils/3.0.25 runtime/browser";
 // per `${token}|${model}`: { instanceId, runId, expiresAt, handle, fetchId }
 const sessions = new Map();
@@ -121,7 +127,7 @@ export function withBuffySystem(messages = []) {
   let i = 0;
   const sys = [];
   while (i < messages.length && (messages[i].role === "system" || messages[i].role === "developer")) sys.push(textOf(messages[i++].content));
-  return [{ role: "system", content: [BUFFY_PREFIX, ...sys.filter(Boolean)].join("\n\n") }, ...messages.slice(i)];
+  return [{ role: "system", content: [buffyIntro(), ...sys.filter(Boolean)].join("\n\n") }, ...messages.slice(i)];
 }
 
 export class FreebuffExecutor extends DefaultExecutor {
@@ -162,6 +168,8 @@ export class FreebuffExecutor extends DefaultExecutor {
     };
     const result = await super.execute({ ...args, body });
     const status = result?.response?.status;
+    // a refunded start (503 "model temporarily unavailable") closes the session: never reuse the cached claim
+    if (status >= 500 || status === 429) sessions.delete(`${token}|${args.model}`);
     if (retried || ![400, 403, 409, 410].includes(status)) return result;
     const text = await result.response.clone().text().catch(() => "");
     if (!SESSION_ERR_RE.test(text)) return result;
