@@ -94,3 +94,51 @@ export function WhatsNewModal() {
     </Modal>
   );
 }
+
+// All releases, newest first. Opened from the header "Changelogs" button.
+export function ChangelogsModal({ isOpen, onClose }) {
+  const [info, setInfo] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    fetch("/api/system/update", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => alive && setInfo(d))
+      .catch(() => alive && setInfo({ releases: [] }));
+    return () => { alive = false; };
+  }, [isOpen]);
+
+  const releases = info?.releases || [];
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="All Changelogs" footer={<Button variant="primary" onClick={onClose}>Close</Button>}>
+      <div className="max-h-[60vh] overflow-auto flex flex-col gap-4">
+        {info?.updateAvailable && (
+          <div className="rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm">
+            Update Available: v{info.latestVersion} (you run v{info.currentVersion})
+          </div>
+        )}
+        {!info && <p className="text-sm text-text-muted">Loading...</p>}
+        {info && releases.length === 0 && <p className="text-sm text-text-muted">No releases found.</p>}
+        {releases.map((r) => (
+          <div key={r.tag} className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">v{r.version}</span>
+              {r.version === info.currentVersion && (
+                <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-semibold text-green-600 dark:text-green-400">Current</span>
+              )}
+              {r.publishedAt && <span className="text-xs text-text-muted">{new Date(r.publishedAt).toLocaleDateString()}</span>}
+              {r.url && (
+                <a href={r.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-primary hover:underline">
+                  View on GitHub
+                </a>
+              )}
+            </div>
+            <Notes text={r.notes.trim()} />
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+ChangelogsModal.propTypes = { isOpen: PropTypes.bool, onClose: PropTypes.func };

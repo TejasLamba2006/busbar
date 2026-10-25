@@ -52,6 +52,26 @@ export async function fetchReleaseNotes(version) {
   return body;
 }
 
+// All GitHub releases, newest first (cached 5 min on success only).
+let releasesCache = { at: 0, list: null };
+export async function fetchAllReleases() {
+  if (releasesCache.list && Date.now() - releasesCache.at < 5 * 60 * 1000) return releasesCache.list;
+  const rels = await getJson(`https://api.github.com/repos/${REPO}/releases?per_page=30`, {
+    Accept: "application/vnd.github+json", "User-Agent": "busbar-ai",
+  });
+  if (!Array.isArray(rels)) return releasesCache.list || [];
+  const list = rels.map((r) => ({
+    tag: r.tag_name,
+    version: String(r.tag_name || "").replace(/^v/, ""),
+    title: r.name || r.tag_name,
+    notes: r.body || "",
+    publishedAt: r.published_at,
+    url: r.html_url,
+  }));
+  releasesCache = { at: Date.now(), list };
+  return list;
+}
+
 // ---- update-status.json (written by the detached worker) -----------------------
 const statusPath = (dir = DATA_DIR) => path.join(dir, "update-status.json");
 
@@ -88,9 +108,10 @@ export async function checkForUpdate({ autoUpdate = false } = {}) {
   const fresh = !!file?.updatedAt && Date.now() - Date.parse(file.updatedAt) < 5 * 60 * 1000;
   const inFlight = fresh && (file.status === "updating" || file.status === "restarting");
   const justAutoUpdatedTo = file?.justUpdated && file.updatedTo === pkg.version ? pkg.version : null;
-  const [latestReleaseNotes, currentReleaseNotes] = await Promise.all([
+  const [latestReleaseNotes, currentReleaseNotes, releases] = await Promise.all([
     updateAvailable ? fetchReleaseNotes(latestVersion) : null,
     justAutoUpdatedTo ? fetchReleaseNotes(pkg.version) : null,
+    fetchAllReleases(),
   ]);
   return {
     currentVersion: pkg.version,
@@ -103,6 +124,7 @@ export async function checkForUpdate({ autoUpdate = false } = {}) {
     latestReleaseNotes,
     currentReleaseNotes,
     justAutoUpdatedTo,
+    releases,
   };
 }
 

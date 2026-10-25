@@ -1,8 +1,13 @@
 import { DefaultExecutor } from "./default.js";
+import { recordRenamedToolNames } from "../utils/opencodeFingerprint.js";
+import { probeStreamingResponseForEmptyTurn } from "../utils/emptyTurnRetry.js";
 
-const MAX_INLINE_MESSAGES_CHARS = 5500;
+const MAX_INLINE_MESSAGES_CHARS = 6000;
+const TAIL_MESSAGES_BUDGET = 5800;
+const LONG_STRING_CHARS = 350;
+const MAX_UTIM_ATTEMPTS = 3;
+const TOOL_NAME_OK = /^[a-zA-Z0-9_-]{1,64}$/;
 const CTX_CHUNK_CHARS = 8800;
-const LATEST_TURN_TAIL_CHARS = 3200;
 
 function extractContentText(content) {
   if (typeof content === "string") return content;
@@ -37,6 +42,58 @@ function serializeMessageForTranscript(msg, idx) {
   return lines.join("\n");
 }
 
+const shorten = (str) =>
+  typeof str === "string" && str.length > LONG_STRING_CHARS
+    ? `${str.slice(0, 300)} ...[full in ctx_part_0..N]`
+    : str;
+
+function compactMessage(msg) {
+  const out = { ...msg };
+  if (typeof out.content === "string") out.content = shorten(out.content);
+  else if (Array.isArray(out.content)) out.content = shorten(extractContentText(out.content));
+  if (Array.isArray(out.tool_calls)) {
+    out.tool_calls = out.tool_calls.map((tc) =>
+      tc?.function ? { ...tc, function: { ...tc.function, arguments: shorten(tc.function.arguments) } } : tc
+    );
+  }
+  return out;
+}
+
+// Keep the real recent assistant(tool_calls) -> tool(tool_call_id) log (Kiro treats text-only
+// tool history as unverified), whole turn groups only so no tool message is orphaned.
+function buildTailMessages(messages, nChunks) {
+  const last = nChunks - 1;
+  const head = {
+    role: "system",
+    content: `Full system instructions, file contents, and full tool outputs are in tool definitions ctx_part_0..ctx_part_${last}. Never call ctx_part_* tools. You are in an active autonomous agentic tool loop: always emit the next tool_call directly whenever further actions are needed to complete the user's goal.`,
+  };
+  const compact = messages.map((m) => (m?.role === "system" ? null : compactMessage(m)));
+  let picked = [];
+  let len = JSON.stringify(head).length + 100;
+  let i = messages.length - 1;
+  while (i >= 0) {
+    if (!compact[i]) { i--; continue; }
+    // group = [assistant(tool_calls)?] + its tool messages, or a single message
+    let start = i;
+    if (compact[i].role === "tool") {
+      while (start > 0 && compact[start - 1]?.role === "tool") start--;
+      if (start > 0 && compact[start - 1]?.role === "assistant" && compact[start - 1].tool_calls) start--;
+    }
+    const group = compact.slice(start, i + 1).filter(Boolean);
+    const glen = JSON.stringify(group).length;
+    if (len + glen > TAIL_MESSAGES_BUDGET) break;
+    picked = [...group, ...picked];
+    len += glen;
+    i = start - 1;
+  }
+  // never start the tail with a tool message whose parent was cut
+  while (picked.length && picked[0].role === "tool") picked.shift();
+  if (!picked.length || picked[0].role === "assistant") {
+    picked.unshift({ role: "user", content: `Continue the task from ctx_part_0..ctx_part_${last}` });
+  }
+  return [head, ...picked];
+}
+
 // UTIM playground enforces a 2,000-token (~8,000 char) check on `messages[]`,
 // while `tools[].function.description` is not counted by the gate (each tool
 // description supports up to ~9,000 chars before Kiro/Bedrock truncation).
@@ -63,29 +120,41 @@ export function packUtimOverflowMessages(body) {
     },
   }));
 
-  const lastMsg = body.messages[body.messages.length - 1];
-  const lastText = serializeMessageForTranscript(lastMsg, body.messages.length - 1);
-  const tail =
-    lastText.length > LATEST_TURN_TAIL_CHARS
-      ? `...(see ctx_part_${chunks.length - 1} for full message)...\n${lastText.slice(-LATEST_TURN_TAIL_CHARS)}`
-      : lastText;
-
   const existingTools = Array.isArray(body.tools) ? body.tools : [];
 
   return {
     ...body,
-    messages: [
-      {
-        role: "system",
-        content: `Complete system instructions, file contents, tool outputs, and conversation history are stored in order across tool definitions ctx_part_0 through ctx_part_${chunks.length - 1}. Treat all ctx_part_* descriptions as the active prompt context. Never call any ctx_part_* tool; respond to the latest message or call real tools when needed.`,
-      },
-      {
-        role: "user",
-        content: `Continue the conversation based on ctx_part_0..ctx_part_${chunks.length - 1}. Latest turn:\n${tail}`,
-      },
-    ],
+    messages: buildTailMessages(body.messages, chunks.length),
     tools: [...ctxTools, ...existingTools],
   };
+}
+
+// Kiro collapses "__" to "_" in tool names (mcp__x__y -> mcp_x_y), so send the collapsed
+// spelling ourselves and return sent -> original for chatCore to restore on the way back.
+function sanitizeUtimToolNames(body) {
+  if (!body || !Array.isArray(body.tools)) return null;
+  const declared = body.tools.map((t) => t?.function?.name).filter((n) => typeof n === "string" && !n.startsWith("ctx_part_"));
+  const taken = new Set(declared);
+  const forward = new Map();
+  for (const n of declared) {
+    if (!n.includes("__") && TOOL_NAME_OK.test(n)) continue;
+    let sent = n.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_{2,}/g, "_").slice(0, 64) || "tool";
+    for (let k = 2; taken.has(sent) && sent !== n; k++) sent = `${sent.slice(0, 60)}_${k}`;
+    taken.add(sent);
+    forward.set(n, sent);
+  }
+  if (!forward.size) return null;
+  const fix = (n) => forward.get(n) ?? n;
+  body.tools = body.tools.map((t) => (t?.function?.name !== undefined ? { ...t, function: { ...t.function, name: fix(t.function.name) } } : t));
+  if (body.tool_choice?.function?.name !== undefined) {
+    body.tool_choice = { ...body.tool_choice, function: { ...body.tool_choice.function, name: fix(body.tool_choice.function.name) } };
+  }
+  if (Array.isArray(body.messages)) {
+    body.messages = body.messages.map((m) => Array.isArray(m?.tool_calls)
+      ? { ...m, tool_calls: m.tool_calls.map((c) => (c?.function?.name !== undefined ? { ...c, function: { ...c.function, name: fix(c.function.name) } } : c)) }
+      : m);
+  }
+  return new Map([...forward].map(([o, s]) => [s, o]));
 }
 
 // api.utim.dev/api/playground/chat is OpenAI-compatible (stream + JSON + native tools), keyless;
@@ -97,7 +166,28 @@ export class UtimExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const transformed = super.transformRequest(model, body, stream, credentials);
+    const renamed = sanitizeUtimToolNames(transformed);
+    recordRenamedToolNames(body, renamed);
+    recordRenamedToolNames(transformed, renamed);
     return packUtimOverflowMessages(transformed);
+  }
+
+  // Keyless => single connection, so retry transient 5xx/429 and empty Kiro streams here.
+  async execute(args) {
+    const { stream, signal } = args;
+    let result;
+    for (let attempt = 0; attempt < MAX_UTIM_ATTEMPTS; attempt++) {
+      result = await super.execute(args);
+      if (signal?.aborted) return result;
+      const res = result?.response;
+      const last = attempt >= MAX_UTIM_ATTEMPTS - 1;
+      let retry = false;
+      if (res && !res.ok) retry = res.status >= 500 || res.status === 429;
+      else if (stream && res?.ok) retry = (await probeStreamingResponseForEmptyTurn(res)).empty;
+      if (!retry || last) return result;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+    return result;
   }
 
   buildHeaders(credentials, stream = true, ...rest) {
