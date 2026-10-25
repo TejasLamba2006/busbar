@@ -17,7 +17,7 @@ Busbar is a local gateway that speaks the OpenAI, Anthropic, and Gemini APIs on 
 
 Point your tools at it, add accounts in the dashboard, and it handles format translation, model combos, multi-account fallback, token refresh, and usage tracking.
 
-Busbar is a fork of [9Router](https://github.com/decolua/9router). The on-disk data directory is still `9router`, so existing databases, API keys, and connections keep loading.
+Busbar is a fork of [9Router](https://github.com/decolua/9router). The data directory is `~/.busbar` (`%APPDATA%\busbar` on Windows). Existing `~/.9router` data is copied over automatically on first start, so databases, API keys, and connections keep loading.
 
 ## Why Busbar exists
 

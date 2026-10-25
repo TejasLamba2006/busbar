@@ -10,7 +10,7 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
-import { ConfirmModal } from "./Modal";
+import Modal from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
@@ -46,6 +46,8 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updatingNow, setUpdatingNow] = useState(false);
+  const [updateError, setUpdateError] = useState("");
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
@@ -97,6 +99,28 @@ export default function Sidebar({ onClose }) {
         setIsDisconnected(true);
       }
     }, 1000);
+  };
+
+  // One-click: server installs from npm and restarts itself, then page reloads.
+  const handleUpdateAndRestart = async () => {
+    setUpdateError("");
+    setUpdatingNow(true);
+    try {
+      const res = await fetch("/api/system/update", { method: "POST" });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Update failed");
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const d = await (await fetch("/api/system/update", { cache: "no-store" })).json();
+          if (d.currentVersion === data.updatedTo) { globalThis.location.reload(); return; }
+        } catch { /* restarting */ }
+      }
+      throw new Error("Server did not come back in time. Reload manually.");
+    } catch (e) {
+      setUpdateError(e.message);
+      setUpdatingNow(false);
+    }
   };
 
   const handleCancelUpdate = () => {
@@ -318,16 +342,24 @@ export default function Sidebar({ onClose }) {
 
 
       {/* Update Confirmation Modal */}
-      <ConfirmModal
+      <Modal
         isOpen={showUpdateModal}
-        onClose={() => setShowUpdateModal(false)}
-        onConfirm={handleUpdate}
+        onClose={() => !updatingNow && setShowUpdateModal(false)}
         title="Update Busbar"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
-        cancelText="Cancel"
-        variant="primary"
-      />
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowUpdateModal(false)} disabled={updatingNow}>Cancel</Button>
+            <Button variant="secondary" onClick={handleUpdate} disabled={updatingNow}>Show Command</Button>
+            <Button variant="primary" onClick={handleUpdateAndRestart} loading={updatingNow}>Update &amp; Restart Now</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text-muted">
+          {`Install v${updateInfo?.latestVersion || ""} automatically and restart, or show the manual CLI command.`}
+        </p>
+        {updateError && <p className="text-sm text-red-500 mt-2 break-all">{updateError}</p>}
+      </Modal>
 
       {/* Disconnected / Updating Overlay */}
       {(isDisconnected || isUpdating) && (

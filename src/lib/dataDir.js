@@ -2,13 +2,18 @@ import fs from "node:fs";
 import path from "path";
 import os from "os";
 
-const APP_NAME = "9router";
+const APP_NAME = "busbar";
 
 function defaultDir() {
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
+  const win = process.platform === "win32";
+  const base = win ? (process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming")) : os.homedir();
+  const primary = path.join(base, win ? "busbar" : ".busbar");
+  const legacy = path.join(base, win ? "9router" : ".9router");
+  // Auto-migrate legacy 9router data once; fall back to legacy if copy fails.
+  if (!fs.existsSync(path.join(primary, "db", "data.sqlite")) && fs.existsSync(legacy)) {
+    try { fs.cpSync(legacy, primary, { recursive: true, force: false }); } catch { return legacy; }
   }
-  return path.join(os.homedir(), `.${APP_NAME}`);
+  return primary;
 }
 
 export function getDataDir() {

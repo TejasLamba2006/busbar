@@ -6,6 +6,8 @@ const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787"
 
 const DEFAULT_SETTINGS = {
   serverPort: 20128,
+  autoUpdate: false,
+  autoUpdateIntervalHours: 6,
   cloudEnabled: false,
   tunnelEnabled: false,
   tunnelUrl: "",

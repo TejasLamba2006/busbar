@@ -96,12 +96,21 @@ function collectAppPids() {
 }
 
 // Copy updater.js into DATA_DIR so npm -g can overwrite node_modules safely
+function defaultDir() {
+  const win = process.platform === "win32";
+  const base = win ? (process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming")) : os.homedir();
+  const primary = path.join(base, win ? "busbar" : ".busbar");
+  const legacy = path.join(base, win ? "9router" : ".9router");
+  // Auto-migrate legacy 9router data once; fall back to legacy if copy fails.
+  if (!fs.existsSync(path.join(primary, "db", "data.sqlite")) && fs.existsSync(legacy)) {
+    try { fs.cpSync(legacy, primary, { recursive: true, force: false }); } catch { return legacy; }
+  }
+  return primary;
+}
+
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
-  }
-  return path.join(os.homedir(), ".9router");
+  return defaultDir();
 }
 
 function resolveBundledUpdaterPath() {

@@ -16,5 +16,8 @@ export async function register() {
 
     const { startProviderModelRefresh } = await import("@/lib/providerModelRefresh");
     startProviderModelRefresh();
+
+    const { startAutoUpdater } = await import("@/lib/system/autoUpdater");
+    startAutoUpdater();
   }
 }

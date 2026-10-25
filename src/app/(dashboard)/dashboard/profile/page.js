@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers.js";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
+import UpdatesCard from "./UpdatesCard";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
@@ -855,7 +856,7 @@ export default function ProfilePage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
                 <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.busbar/db/data.sqlite (%APPDATA%\busbar on Windows)</p>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -922,6 +923,15 @@ export default function ProfilePage() {
             Takes effect on next gateway restart. You can also override per run with: busbar --port &lt;port&gt;
           </p>
         </Card>
+
+        {/* Updates */}
+        <UpdatesCard
+          autoUpdate={settings.autoUpdate}
+          onAutoUpdateChange={async (v) => {
+            setSettings((prev) => ({ ...prev, autoUpdate: v }));
+            await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ autoUpdate: v }) }).catch(() => {});
+          }}
+        />
 
         {/* Language */}
         <Card>

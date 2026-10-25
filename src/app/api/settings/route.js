@@ -87,6 +87,12 @@ export async function PATCH(request) {
       body.serverPort = n;
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "autoUpdate")) {
+      if (typeof body.autoUpdate !== "boolean") {
+        return NextResponse.json({ error: "autoUpdate must be a boolean" }, { status: 400 });
+      }
+    }
+
     const settings = await updateSettings(body);
 
     // Thin CLI reads port.json at startup (no SQLite driver needed there)
