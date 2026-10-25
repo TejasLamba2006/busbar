@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DefaultExecutor } from "./default.js";
+import { cloakTools, uncloakResponse } from "./freebuffTools.js";
 import { FREEBUFF_ROOT_AGENT } from "../providers/registry/freebuff.js";
 import {
   ensureFreebuffDeviceKey,
@@ -84,7 +85,7 @@ async function ensureSession(token, model) {
     }).then((r) => ({ ...r, instanceId }));
   };
   let { res, json, instanceId } = await admit();
-  if (res.status === 409 && /purchase_|model_/.test(String(json?.status))) {
+  if (res.status === 409 && /purchase_|model_|session_superseded|superseded/.test(`${json?.status} ${json?.error}`)) {
     // another model still holds this account's claim: release it (and our own cached sessions), then retry once
     const held = new Set([json?.currentInstanceId].filter(Boolean));
     for (const [k, v] of sessions) if (k.startsWith(`${token}|`)) { held.add(v.instanceId); sessions.delete(k); }
@@ -153,10 +154,12 @@ export class FreebuffExecutor extends DefaultExecutor {
     const { s, error } = await ensureSession(token, args.model);
     if (error) return { response: error, url: API, headers: {}, transformedBody: args.body };
 
+    const cloak = cloakTools(args.body);
     const body = {
       ...args.body,
+      ...cloak.fields,
       model: s.handle,
-      messages: withBuffySystem(args.body?.messages),
+      messages: withBuffySystem(cloak.fields.messages),
       codebuff_metadata: {
         run_id: s.runId,
         client_id: randomUUID(),
@@ -168,12 +171,14 @@ export class FreebuffExecutor extends DefaultExecutor {
     };
     const result = await super.execute({ ...args, body });
     const status = result?.response?.status;
+    if (status === 200 && cloak.bySlot) result.response = await uncloakResponse(result.response, cloak);
     // a refunded start (503 "model temporarily unavailable") closes the session: never reuse the cached claim
     if (status >= 500 || status === 429) sessions.delete(`${token}|${args.model}`);
     if (retried || ![400, 403, 409, 410].includes(status)) return result;
     const text = await result.response.clone().text().catch(() => "");
     if (!SESSION_ERR_RE.test(text)) return result;
     sessions.delete(`${token}|${args.model}`);
+    await release(token, s.instanceId, s.fetchId);
     invalidateFreebuffCatalog();
     if (/device[_-]?key/i.test(text)) forgetFreebuffDeviceKey(token);
     return this.execute(args, true);

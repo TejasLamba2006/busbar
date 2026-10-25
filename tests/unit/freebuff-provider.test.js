@@ -148,6 +148,89 @@ describe("FreebuffExecutor", () => {
   });
 });
 
+describe("freebuff tool cloaking + superseded admission", () => {
+  const creds = { accessToken: "tok-1" };
+  const tool = (name, props = { x: { type: "string" } }) => ({ type: "function", function: { name, description: `${name} tool`, parameters: { type: "object", properties: props } } });
+  const mk = (tools, extra = {}) => ({
+    model: "glm-5.3-flash", stream: false, credentials: creds,
+    body: { messages: [{ role: "user", content: "hi" }], tools, ...extra },
+  });
+  const sent = () => JSON.parse(proxyFetchMock.mock.calls.at(-1)[1].body);
+
+  it("maps client tools to whitelisted names, cloaks tool_choice and history, uncloaks JSON responses", async () => {
+    proxyFetchMock.mockResolvedValue(json({
+      choices: [{ message: { tool_calls: [{ id: "c1", type: "function", function: { name: "run_terminal_command", arguments: JSON.stringify({ command: JSON.stringify({ command: "ls" }) }) } }] } }],
+    }));
+    const a = mk([tool("Bash", { command: { type: "string" } }), tool("Read"), tool("MyMcp")], {
+      tool_choice: { type: "function", function: { name: "Bash" } },
+    });
+    a.body.messages.push(
+      { role: "assistant", content: null, tool_calls: [{ id: "h1", type: "function", function: { name: "Read", arguments: '{"x":"a"}' } }] },
+      { role: "tool", tool_call_id: "h1", name: "Read", content: "ok" },
+    );
+    const { response } = await new FreebuffExecutor().execute(a);
+    const body = sent();
+    expect(body.tools.map((t) => t.function.name)).toEqual(["run_terminal_command", "read_files", "glob"]);
+    expect(Object.keys(body.tools[0].function.parameters.properties)).toEqual(["command"]);
+    expect(body.tool_choice.function.name).toBe("run_terminal_command");
+    const hist = body.messages.find((m) => m.role === "assistant");
+    expect(hist.tool_calls[0].function.name).toBe("read_files");
+    expect(JSON.parse(JSON.parse(hist.tool_calls[0].function.arguments).paths)).toEqual({ x: "a" });
+    expect(body.messages.find((m) => m.role === "tool").name).toBe("read_files");
+    const out = await response.json();
+    expect(out.choices[0].message.tool_calls[0].function).toEqual({ name: "Bash", arguments: '{"command":"ls"}' });
+  });
+
+  it("multiplexes overflow tools through the dispatcher and unwraps them", async () => {
+    const tools = Array.from({ length: 25 }, (_, i) => tool(`mcp_${i}`));
+    proxyFetchMock.mockResolvedValue(json({
+      choices: [{ message: { tool_calls: [{ id: "c1", type: "function", function: { name: "lookup_agent_info", arguments: JSON.stringify({ agentId: JSON.stringify({ tool: "mcp_24", input: { x: "1" } }) }) } }] } }],
+    }));
+    const { response } = await new FreebuffExecutor().execute(mk(tools));
+    const names = sent().tools.map((t) => t.function.name);
+    expect(names.length).toBe(20);
+    expect(new Set(names).size).toBe(20);
+    expect(names).toContain("lookup_agent_info");
+    expect((await response.json()).choices[0].message.tool_calls[0].function).toEqual({ name: "mcp_24", arguments: '{"x":"1"}' });
+  });
+
+  it("uncloaks streaming tool call deltas into one whole call", async () => {
+    const chunk = (delta, finish = null) => `data: ${JSON.stringify({ id: "g", object: "chat.completion.chunk", model: "m", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+    const sse = [
+      chunk({ tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "run_terminal_command", arguments: "" } }] }),
+      chunk({ tool_calls: [{ index: 0, function: { arguments: '{"command":"{\\"command\\":' } }] }),
+      chunk({ tool_calls: [{ index: 0, function: { arguments: '\\"pwd\\"}"}' } }] }),
+      chunk({}, "tool_calls"),
+      "data: [DONE]\n\n",
+    ].join("");
+    proxyFetchMock.mockResolvedValue(new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }));
+    const { response } = await new FreebuffExecutor().execute({ ...mk([tool("Bash", { command: { type: "string" } })]), stream: true });
+    const text = await response.text();
+    const events = text.split("\n\n").filter((e) => e.startsWith("data: {")).map((e) => JSON.parse(e.slice(6)));
+    const calls = events.flatMap((e) => e.choices[0].delta.tool_calls || []);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].function).toEqual({ name: "Bash", arguments: '{"command":"pwd"}' });
+    expect(events.at(-1).choices[0].finish_reason).toBe("tool_calls");
+    expect(text).toContain("data: [DONE]");
+  });
+
+  it("releases and re-admits when admission answers 409 session_superseded", async () => {
+    let n = 0;
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/freebuff/models")) return json(CATALOG);
+      if (u.endsWith("/session/admission")) return n++ === 0 ? json({ status: "session_superseded", currentInstanceId: "cli:old" }, 409) : json({ status: "active", instanceId: "cli:new" });
+      if (u.endsWith("/agent-runs")) return json({ runId: "r3" });
+      return json({});
+    });
+    proxyFetchMock.mockResolvedValue(json({ ok: true }));
+    expect((await new FreebuffExecutor().execute({ model: "glm-5.3-flash", body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: creds })).response.status).toBe(200);
+    const del = fetchMock.mock.calls.find((c) => c[1].method === "DELETE");
+    expect(del[1].headers["x-freebuff-instance-id"]).toBe("cli:old");
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).endsWith("/session/admission")).length).toBe(2);
+  });
+});
+
 describe("freebuff oauth", () => {
   it("requests a login code and polls until authToken appears", async () => {
     fetchMock.mockImplementation(async (url) =>
