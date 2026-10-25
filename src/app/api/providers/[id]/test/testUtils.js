@@ -927,6 +927,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = !!(data && data.user);
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
+      case "utim": {
+        const res = await fetchWithConnectionProxy("https://api.utim.dev/v1/models", { headers: { Accept: "application/json" } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "UTIM playground unavailable" };
+      }
       case "opencode": {
         const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
           headers: { Authorization: "Bearer public", "User-Agent": "opencode/latest/2.0.26/cli", "x-opencode-client": "cli" },

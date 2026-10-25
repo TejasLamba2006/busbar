@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { DATA_DIR } from "@/lib/dataDir.js";
 import { DefaultExecutor } from "./default.js";
 import { cloakTools, uncloakResponse } from "./freebuffTools.js";
 import { FREEBUFF_ROOT_AGENT } from "../providers/registry/freebuff.js";
@@ -25,8 +28,44 @@ const UA = "ai-sdk/openai-compatible/0.0.0-test/codebuff ai-sdk/provider-utils/3
 // per `${token}|${model}`: { instanceId, runId, expiresAt, handle, fetchId }
 const sessions = new Map();
 
-export function resetFreebuffForTests() {
+// Persist live sessions so a restart does not pay for a new admission.
+let sessionFile = path.join(DATA_DIR, "freebuff-sessions.json");
+let loaded = false;
+const loadSessions = () => {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const now = Date.now();
+    for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(sessionFile, "utf8")))) {
+      if (v?.expiresAt > now) sessions.set(k, v);
+    }
+  } catch { /* no file yet */ }
+};
+const saveSessions = () => {
+  try {
+    const now = Date.now();
+    const live = Object.fromEntries([...sessions].filter(([, v]) => v.expiresAt > now));
+    fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+    fs.writeFileSync(sessionFile, JSON.stringify(live), { mode: 0o600 });
+  } catch { /* best effort */ }
+};
+const putSession = (k, v) => { sessions.set(k, v); saveSessions(); };
+const dropSession = (k) => { if (sessions.delete(k)) saveSessions(); };
+
+export function resetFreebuffForTests(file) {
   sessions.clear();
+  loaded = false;
+  if (file) sessionFile = file;
+}
+
+// Per-model price shortfall is not an account failure: answer 400 so the connection is not locked.
+export function shortfallMessage(json, model) {
+  const sf = json?.freebucksShortfall;
+  const d = json?.freebucks?.daily || {};
+  const limit = json?.limit ?? d.limit;
+  const used = json?.recentCount ?? d.spent;
+  const resetAt = json?.resetAt || d.resetAt || "unknown";
+  return `Insufficient Freebucks for ${model}: costs ${sf.price} Freebucks, balance is ${sf.balance} (${used}/${limit} daily used, resets at ${resetAt}). Try a 0-cost or 5-cost fb/* model.`;
 }
 
 const errorResponse = (status, message, code) =>
@@ -60,6 +99,7 @@ const release = (token, instanceId, fetchId) =>
 // Admit (or reuse) a free-mode session bound to the model's live catalog handle, then open a run on the
 // catalog root agent. Mirrors freebuff CLI multi-session claims: instance id "cli:<uuid>" + attempt id header.
 async function ensureSession(token, model) {
+  loadSessions();
   const key = `${token}|${model}`;
   const cur = sessions.get(key);
   if (cur && cur.expiresAt - Date.now() > 60_000) return { s: cur };
@@ -67,6 +107,18 @@ async function ensureSession(token, model) {
   const row = await resolveFreebuffRow(token, model);
   if (!row) return { error: errorResponse(404, `Freebuff model "${model}" is not available for this account`, "model_not_found") };
   const { handle, fetchId } = row;
+
+  // adopt a session the server still holds for this handle (e.g. after a restart) instead of paying again
+  const adopted = await api(token, "/api/v1/freebuff/session", { fetchId }).catch(() => null);
+  const a = adopted?.json;
+  if (adopted?.res.ok && a?.status === "active" && a.model === handle && a.instanceId) {
+    const run = await api(token, "/api/v1/agent-runs", { method: "POST", fetchId, body: { action: "START", agentId: FREEBUFF_ROOT_AGENT, ancestorRunIds: [] } });
+    if (run.res.ok && run.json?.runId) {
+      const s = { instanceId: a.instanceId, runId: run.json.runId, handle, fetchId, expiresAt: a.expiresAt ? Date.parse(a.expiresAt) : Date.now() + 30 * 60_000 };
+      putSession(key, s);
+      return { s };
+    }
+  }
 
   const admit = () => {
     const attempt = randomUUID();
@@ -88,9 +140,12 @@ async function ensureSession(token, model) {
   if (res.status === 409 && /purchase_|model_|session_superseded|superseded/.test(`${json?.status} ${json?.error}`)) {
     // another model still holds this account's claim: release it (and our own cached sessions), then retry once
     const held = new Set([json?.currentInstanceId].filter(Boolean));
-    for (const [k, v] of sessions) if (k.startsWith(`${token}|`)) { held.add(v.instanceId); sessions.delete(k); }
+    for (const [k, v] of sessions) if (k.startsWith(`${token}|`)) { held.add(v.instanceId); dropSession(k); }
     await Promise.all([...held].map((id) => release(token, id, fetchId)));
     ({ res, json, instanceId } = await admit());
+  }
+  if (json?.status === "rate_limited" && json.freebucksShortfall && Number(json.freebucksShortfall.balance) < Number(json.freebucksShortfall.price)) {
+    return { error: errorResponse(400, shortfallMessage(json, model), "freebucks_shortfall") };
   }
   if (!res.ok || json?.status !== "active") {
     const status = res.ok ? 403 : res.status;
@@ -117,7 +172,7 @@ async function ensureSession(token, model) {
     fetchId,
     expiresAt: json.expiresAt ? Date.parse(json.expiresAt) : Date.now() + 30 * 60_000,
   };
-  sessions.set(key, s);
+  putSession(key, s);
   return { s };
 }
 
@@ -173,11 +228,11 @@ export class FreebuffExecutor extends DefaultExecutor {
     const status = result?.response?.status;
     if (status === 200 && cloak.bySlot) result.response = await uncloakResponse(result.response, cloak);
     // a refunded start (503 "model temporarily unavailable") closes the session: never reuse the cached claim
-    if (status >= 500 || status === 429) sessions.delete(`${token}|${args.model}`);
+    if (status >= 500 || status === 429) dropSession(`${token}|${args.model}`);
     if (retried || ![400, 403, 409, 410].includes(status)) return result;
     const text = await result.response.clone().text().catch(() => "");
     if (!SESSION_ERR_RE.test(text)) return result;
-    sessions.delete(`${token}|${args.model}`);
+    dropSession(`${token}|${args.model}`);
     await release(token, s.instanceId, s.fetchId);
     invalidateFreebuffCatalog();
     if (/device[_-]?key/i.test(text)) forgetFreebuffDeviceKey(token);

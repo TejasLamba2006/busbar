@@ -84,6 +84,7 @@ export default {
     { id: "nova-3-premier", name: "Nova 3 Premier" },
     { id: "glm-6v", name: "GLM 6V" },
   ],
+  features: { usage: true, usageApikey: true },
   oauth: {
     codeUrl: "https://freebuff.com/api/auth/cli/code",
     statusUrl: "https://freebuff.com/api/auth/cli/status",

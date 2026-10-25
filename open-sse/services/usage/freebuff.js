@@ -34,24 +34,29 @@ export async function getFreebuffUsage(token, proxyOptions = null) {
         remainingPercentage: Math.min(100, (remaining / total) * 100),
         resetAt: daily.resetAt || null,
         unlimited: false,
-        unit: "freebucks",
+        unit: "Freebucks",
       };
     }
     const wallet = Math.max(0, toFiniteNumber(fb.wallet?.balance, 0));
-    if (wallet > 0) {
-      quotas["Wallet Freebucks"] = {
-        used: 0,
-        total: wallet,
-        remaining: wallet,
-        remainingPercentage: 100,
-        resetAt: fb.wallet?.nextBonusAt || null,
-        unlimited: false,
-        unit: "freebucks",
-        isCreditBalance: true,
-      };
-    }
-    const plan = ["Freebuff", fb.quotaExempt ? "(unmetered)" : ""].filter(Boolean).join(" ");
-    return Object.keys(quotas).length ? { plan, quotas } : { plan, message: "Freebuff connected. No allowance data returned." };
+    quotas["Wallet Balance"] = {
+      used: 0,
+      total: wallet,
+      remaining: wallet,
+      remainingPercentage: wallet > 0 ? 100 : 0,
+      resetAt: fb.wallet?.nextBonusAt || null,
+      unlimited: false,
+      unit: "Freebucks",
+      isCreditBalance: true,
+    };
+    const balance = Math.max(0, toFiniteNumber(fb.balance, wallet + (daily ? toFiniteNumber(daily.remaining, 0) : 0)));
+    const tier = d.accessTier ? ` (${d.accessTier})` : "";
+    const prices = Object.values(fb.prices || {}).map(Number).filter(Number.isFinite);
+    const affordable = [...new Set(prices.filter((p) => p <= balance))].sort((x, y) => x - y).map((p) => `${p}-cost`);
+    const dailyTxt = daily ? ` | ${toFiniteNumber(daily.remaining, 0)} / ${toFiniteNumber(daily.limit, 0)} Freebucks left` : ` | ${balance} Freebucks available`;
+    const models = affordable.length ? ` (${affordable.join(" & ")} models available)` : "";
+    const session = d.status === "active" && d.model ? ` | session active${d.expiresAt ? ` until ${d.expiresAt}` : ""}` : "";
+    const plan = `Freebuff${tier}${fb.quotaExempt ? " (unmetered)" : ""}${dailyTxt}${models}${session}`;
+    return { plan, quotas, totalFreebucks: balance };
   } catch (error) {
     return { message: `Freebuff error: ${error.message}` };
   }

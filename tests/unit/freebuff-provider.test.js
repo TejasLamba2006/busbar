@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const { proxyFetchMock } = vi.hoisted(() => ({ proxyFetchMock: vi.fn() }));
 vi.mock("open-sse/utils/proxyFetch.js", async (orig) => ({
@@ -17,6 +20,7 @@ const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 let fetchMock;
+let SESS_FILE;
 const CATALOG = {
   protocol: 1, version: "v", issuedAt: 5, refreshAt: 9, plansUrl: "x", fetchId: "fetch-1",
   rows: [
@@ -28,7 +32,8 @@ const CATALOG = {
 };
 
 beforeEach(() => {
-  resetFreebuffForTests();
+  SESS_FILE = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "fb-")), "freebuff-sessions.json");
+  resetFreebuffForTests(SESS_FILE);
   svcMod.resetFreebuffModelsForTests();
   proxyFetchMock.mockReset();
   fetchMock = vi.fn(async (url) => {
@@ -297,5 +302,65 @@ describe("freebuff device signing + catalog", () => {
     svcMod.resetFreebuffModelsForTests();
     fetchMock.mockImplementation(async () => json({}, 404));
     expect(await svcMod.resolveFreebuffModels("t3")).toBeNull();
+  });
+});
+
+describe("freebuff quota, shortfall and session persistence", () => {
+  const creds = { accessToken: "tok-q" };
+  const args = { model: "glm-5.3-flash", body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: creds };
+
+  it("is usage-enabled so it shows in Provider Limits", () => {
+    expect(registry.features).toEqual({ usage: true, usageApikey: true });
+  });
+
+  it("maps session freebucks to daily + wallet quotas and a plan summary", async () => {
+    const { getFreebuffUsage } = await import("open-sse/services/usage/freebuff.js");
+    proxyFetchMock.mockResolvedValue(json({
+      accessTier: "limited", status: "active", model: "fbm1.glm",
+      freebucks: { balance: 5, daily: { limit: 25, spent: 20, remaining: 5, resetAt: "2026-10-26T07:00:00.000Z" }, wallet: { balance: 0 }, prices: { a: 0, b: 5, c: 10 } },
+    }));
+    const u = await getFreebuffUsage("tok-q");
+    expect(u.quotas["Daily Freebucks"]).toMatchObject({ used: 20, total: 25, remaining: 5, unit: "Freebucks", resetAt: "2026-10-26T07:00:00.000Z" });
+    expect(u.quotas["Wallet Balance"]).toMatchObject({ remaining: 0, isCreditBalance: true });
+    expect(u.plan).toContain("Freebuff (limited) | 5 / 25 Freebucks left (0-cost & 5-cost models available)");
+  });
+
+  it("returns 400 (not account-locking) with a clear message on a price shortfall", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/freebuff/models")) return json(CATALOG);
+      if (u.endsWith("/session/admission")) return json({ status: "rate_limited", recentCount: 20, limit: 25, resetAt: "2026-10-26T07:00:00.000Z", freebucksShortfall: { price: 10, balance: 5 } }, 429);
+      return json({});
+    });
+    const { response } = await new FreebuffExecutor().execute(args);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.message).toBe("Insufficient Freebucks for glm-5.3-flash: costs 10 Freebucks, balance is 5 (20/25 daily used, resets at 2026-10-26T07:00:00.000Z). Try a 0-cost or 5-cost fb/* model.");
+  });
+
+  it("persists sessions to disk and adopts an active server session without admission", async () => {
+    proxyFetchMock.mockResolvedValue(json({ ok: true }));
+    await new FreebuffExecutor().execute(args);
+    expect(Object.keys(JSON.parse(fs.readFileSync(SESS_FILE, "utf8")))).toEqual(["tok-q|glm-5.3-flash"]);
+    // restart: cache reloaded from file, no admission call
+    resetFreebuffForTests(SESS_FILE);
+    fetchMock.mockClear();
+    await new FreebuffExecutor().execute(args);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/session/admission"))).toBe(false);
+  });
+
+  it("adopts an active server-side session on cache miss", async () => {
+    proxyFetchMock.mockResolvedValue(json({ ok: true }));
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/freebuff/models")) return json(CATALOG);
+      if (u.endsWith("/freebuff/session")) return json({ status: "active", model: "fbm1.glm", instanceId: "cli:adopted", expiresAt: new Date(Date.now() + 3600e3).toISOString() });
+      if (u.endsWith("/agent-runs")) return json({ runId: "run-9" });
+      return json({});
+    });
+    await new FreebuffExecutor().execute(args);
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => u.endsWith("/session/admission"))).toBe(false);
+    expect(urls.some((u) => u.endsWith("/agent-runs"))).toBe(true);
   });
 });
