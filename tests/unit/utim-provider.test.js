@@ -25,4 +25,35 @@ describe("utim provider", () => {
     const h = ex.buildHeaders({}, true);
     expect(h.Authorization).toBeUndefined();
   });
+
+  it("packs oversized messages (>2k tokens) into 8.8k-char ctx_part_N tool definitions while keeping real tools", () => {
+    const ex = getExecutor("utim");
+    const bigSystem = "Rule: follow instructions.\n".repeat(1200); // ~32,400 chars
+    const body = {
+      model: "antropic/claude-opus-5",
+      messages: [
+        { role: "system", content: bigSystem },
+        { role: "user", content: "Run echo hello" },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "Bash",
+            description: "Run bash",
+            parameters: { type: "object", properties: { command: { type: "string" } } },
+          },
+        },
+      ],
+    };
+
+    const packed = ex.transformRequest("antropic/claude-opus-5", body, true, {});
+    expect(JSON.stringify(packed.messages).length).toBeLessThan(5500);
+    const ctxTools = packed.tools.filter((t) => t.function.name.startsWith("ctx_part_"));
+    expect(ctxTools.length).toBeGreaterThanOrEqual(4);
+    for (const ct of ctxTools) {
+      expect(ct.function.description.length).toBeLessThanOrEqual(9000);
+    }
+    expect(packed.tools[packed.tools.length - 1].function.name).toBe("Bash");
+  });
 });
