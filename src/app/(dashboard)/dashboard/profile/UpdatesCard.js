@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card, Button, Toggle } from "@/shared/components";
-
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+import { ConfirmUpdateModal, pollUntilUpdated } from "@/shared/components/UpdateModals";
 
 export default function UpdatesCard({ autoUpdate, onAutoUpdateChange }) {
   const [info, setInfo] = useState(null);
@@ -13,30 +12,39 @@ export default function UpdatesCard({ autoUpdate, onAutoUpdateChange }) {
   const load = () => fetch("/api/system/update").then((r) => r.json()).then(setInfo).catch(() => {});
   useEffect(() => { load(); }, []);
 
-  const updateNow = async () => {
+  const [confirm, setConfirm] = useState(null);
+  const [confirmError, setConfirmError] = useState("");
+
+  // Step 1: check only. Never installs without the confirm modal.
+  const checkNow = async () => {
     setBusy(true);
-    setMsg({ type: "", text: "Checking and installing..." });
+    setMsg({ type: "", text: "Checking for updates..." });
+    try {
+      const d = await (await fetch("/api/system/update?force=1", { cache: "no-store" })).json();
+      setInfo(d);
+      if (d.updateAvailable) { setConfirmError(""); setConfirm(d); setMsg({ type: "", text: "" }); }
+      else setMsg({ type: "ok", text: "Already up to date." });
+    } catch {
+      setMsg({ type: "error", text: "Update check failed" });
+    }
+    setBusy(false);
+  };
+
+  // Step 2: confirmed. Server hands off to the detached worker, goes down, comes back on the new version.
+  const installNow = async () => {
+    setBusy(true);
+    setConfirmError("");
     try {
       const res = await fetch("/api/system/update", { method: "POST" });
       const data = await res.json();
-      if (!data.success) {
-        setMsg({ type: "error", text: data.error || "Update failed" });
-        setBusy(false);
-        return;
-      }
-      setMsg({ type: "ok", text: `Installed v${data.updatedTo}. Restarting...` });
-      // Poll until the server is back on the new version, then reload.
-      for (let i = 0; i < 60; i++) {
-        await wait(2000);
-        try {
-          const r = await fetch("/api/system/update", { cache: "no-store" });
-          const d = await r.json();
-          if (d.currentVersion === data.updatedTo) { globalThis.location.reload(); return; }
-        } catch { /* server restarting */ }
-      }
-      setMsg({ type: "error", text: "Server did not come back in time. Reload manually." });
+      if (!data.success) { setConfirmError(data.error || "Update failed"); setBusy(false); return; }
+      setConfirm(null);
+      setMsg({ type: "ok", text: `Installing v${data.updatedTo} and restarting. This takes about 30 seconds...` });
+      const r = await pollUntilUpdated(data.updatedTo);
+      if (r.ok) { globalThis.location.reload(); return; }
+      setMsg({ type: "error", text: r.error });
     } catch {
-      setMsg({ type: "error", text: "Update request failed" });
+      setConfirmError("Update request failed");
     }
     setBusy(false);
   };
@@ -61,7 +69,7 @@ export default function UpdatesCard({ autoUpdate, onAutoUpdateChange }) {
         </div>
         <Toggle checked={autoUpdate === true} onChange={() => onAutoUpdateChange(!autoUpdate)} />
       </div>
-      <Button variant="primary" icon="download" onClick={updateNow} loading={busy}>
+      <Button variant="primary" icon="download" onClick={checkNow} loading={busy}>
         Check &amp; Update Now
       </Button>
       {msg.text && (
@@ -70,6 +78,14 @@ export default function UpdatesCard({ autoUpdate, onAutoUpdateChange }) {
       {info?.lastUpdateError && !msg.text && (
         <p className="text-xs mt-2 text-red-500 break-all">Last error: {info.lastUpdateError}</p>
       )}
+      <ConfirmUpdateModal
+        isOpen={!!confirm}
+        info={confirm}
+        busy={busy}
+        error={confirmError}
+        onCancel={() => setConfirm(null)}
+        onConfirm={installNow}
+      />
     </Card>
   );
 }

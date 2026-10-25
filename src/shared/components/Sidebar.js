@@ -11,6 +11,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
 import Modal from "./Modal";
+import { WhatsNewModal, pollUntilUpdated } from "./UpdateModals";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
@@ -48,6 +49,7 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updatingNow, setUpdatingNow] = useState(false);
   const [updateError, setUpdateError] = useState("");
+  const [releaseNotes, setReleaseNotes] = useState(null);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
@@ -109,14 +111,9 @@ export default function Sidebar({ onClose }) {
       const res = await fetch("/api/system/update", { method: "POST" });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Update failed");
-      for (let i = 0; i < 60; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        try {
-          const d = await (await fetch("/api/system/update", { cache: "no-store" })).json();
-          if (d.currentVersion === data.updatedTo) { globalThis.location.reload(); return; }
-        } catch { /* restarting */ }
-      }
-      throw new Error("Server did not come back in time. Reload manually.");
+      const r = await pollUntilUpdated(data.updatedTo);
+      if (r.ok) { globalThis.location.reload(); return; }
+      throw new Error(r.error);
     } catch (e) {
       setUpdateError(e.message);
       setUpdatingNow(false);
@@ -160,7 +157,10 @@ export default function Sidebar({ onClose }) {
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowUpdateModal(true)}
+                  onClick={() => {
+                    setShowUpdateModal(true);
+                    fetch("/api/system/update", { cache: "no-store" }).then((r) => r.json()).then((d) => setReleaseNotes(d.latestReleaseNotes || null)).catch(() => {});
+                  }}
                   className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
                 >
                   Update now
@@ -341,6 +341,8 @@ export default function Sidebar({ onClose }) {
       </aside>
 
 
+      <WhatsNewModal />
+
       {/* Update Confirmation Modal */}
       <Modal
         isOpen={showUpdateModal}
@@ -356,8 +358,9 @@ export default function Sidebar({ onClose }) {
         }
       >
         <p className="text-sm text-text-muted">
-          {`Install v${updateInfo?.latestVersion || ""} automatically and restart, or show the manual CLI command.`}
+          {`v${updateInfo?.currentVersion || ""} → v${updateInfo?.latestVersion || ""}. Install automatically and restart, or show the manual CLI command.`}
         </p>
+        {releaseNotes && <pre className="text-xs whitespace-pre-wrap break-words max-h-64 overflow-auto p-3 mt-2 rounded-lg bg-bg border border-border">{releaseNotes}</pre>}
         {updateError && <p className="text-sm text-red-500 mt-2 break-all">{updateError}</p>}
       </Modal>
 

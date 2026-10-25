@@ -1,6 +1,6 @@
 {
   "name": "busbar-app",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "Busbar web dashboard and gateway",
   "author": {"name": "Tejas Lamba", "url": "https://tejas.is-a.dev/"},
   "private": true,

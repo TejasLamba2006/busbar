@@ -94,6 +94,28 @@ if (args[0] === "connect" || args[0] === "show") {
   return;
 }
 
+// `busbar update` / `busbar --update`: hand off to a detached worker that kills running busbar,
+// runs npm install -g from outside node_modules/busbar-ai (avoids Windows EBUSY), and restarts it.
+if (args[0] === "update" || args.includes("--update")) {
+  const su = require("./src/cli/utils/selfUpdate");
+  const pu = require("./src/cli/utils/port");
+  const pi = Math.max(args.indexOf("--port"), args.indexOf("-p"));
+  const upPort = pu.resolvePort({ flagPort: pi >= 0 ? parseInt(args[pi + 1], 10) || null : null });
+  const hi = Math.max(args.indexOf("--host"), args.indexOf("-H"));
+  const upHost = hi >= 0 && args[hi + 1] ? args[hi + 1] : "0.0.0.0";
+  (async () => {
+    const latest = await su.latestVersion(pkg.name);
+    if (!latest) { console.error("Could not reach npm registry."); process.exit(1); }
+    if (compareVersions(latest, pkg.version) <= 0) { console.log(`Already up to date (v${pkg.version}).`); process.exit(0); }
+    const running = await su.portOpen(upPort);
+    const log = su.launchWorker({ version: latest, dataDir: pu.getDataDir(), port: upPort, host: upHost, restart: running });
+    console.log(`Updating v${pkg.version} -> v${latest} in the background${running ? " (busbar will restart)" : ""}.`);
+    console.log(`Log: ${log}`);
+    setTimeout(() => process.exit(0), 200);
+  })();
+  return;
+}
+
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
@@ -168,10 +190,12 @@ Options:
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
   --skip-update       Skip auto-update check
+  --update            Same as the update command
   -h, --help          Show this help message
   -v, --version       Show version
 
 Commands:
+  update              Update to the latest version (stops busbar, installs, restarts it)
   connect <server-url> Configure Claude Code for a remote 9router server
                       (npx 9router connect http://host:20128 — no install needed)
   show [tool…]        Show each CLI tool's current 9router config and models
@@ -649,7 +673,8 @@ function startServer(updatePromise) {
       env: {
         ...buildEnvWithRuntime(process.env),
         PORT: port.toString(),
-        HOSTNAME: host
+        HOSTNAME: host,
+        BUSBAR_CLI_DIR: __dirname
       }
     });
     if (!showLog && child.stderr) {
@@ -769,11 +794,17 @@ function startServer(updatePromise) {
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
           console.log(`\n⬆  Update v${pkg.version} → v${latestVersion}\n`);
-          console.log(`Run this after exit:\n`);
-          console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
-          cleanup();
-          await killAllAppProcesses(port);
-          await killProcessOnPort(port);
+          try {
+            const su = require("./src/cli/utils/selfUpdate");
+            const log = su.launchWorker({ version: latestVersion, dataDir: portUtil.getDataDir(), port, host, restart: true });
+            console.log(`Updating in the background; busbar restarts when done.\nLog: ${log}\n`);
+          } catch (e) {
+            console.log(`Auto-update failed (${e.message}). Run this after exit:\n`);
+            console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
+            cleanup();
+            await killAllAppProcesses(port);
+            await killProcessOnPort(port);
+          }
           setTimeout(() => process.exit(0), 200);
           return;
         } else if (choice === "web") {
