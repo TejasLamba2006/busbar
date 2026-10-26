@@ -651,13 +651,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     ? () => trackPendingRequest(model, provider, connectionId, false)
     : () => {};
 
-  // Provider forced streaming but client wants JSON. The Responses wire always
-  // streams upstream (openaiToOpenAIResponsesRequest pins stream:true), so a
-  // non-stream OpenAI/native client behind a Responses upstream must also take
-  // this path — handleForcedSSEToJson returns null when the body is not SSE.
-  if (!clientRequestedStreaming && (providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES)) {
+  // Provider forced streaming (or stream defaulted true when body.stream was omitted)
+  // but client wants JSON. The Responses wire always streams upstream
+  // (openaiToOpenAIResponsesRequest pins stream:true), so a non-stream OpenAI/native
+  // client behind a Responses upstream must also take this path — handleForcedSSEToJson
+  // returns null when the body is not SSE.
+  if (!clientRequestedStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, toolNameMap, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
+    // Upstream returned plain JSON (e.g. OpenAI-compatible passthrough where body.stream
+    // was omitted): serve it as clean JSON instead of piping it through the SSE stream
+    // transformer (which appends `\ndata: [DONE]\n\n` and breaks response.json()).
+    const upstreamCt = (providerResponse.headers.get("content-type") || "").toLowerCase();
+    if (upstreamCt.includes("application/json")) {
+      const jsonResult = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
+      streamController.handleComplete();
+      return jsonResult;
+    }
   }
 
   // True non-streaming response

@@ -17,6 +17,8 @@ vi.mock("../../open-sse/utils/requestLogger.js", () => ({
     logClientRawRequest: vi.fn(),
     logRawRequest: vi.fn(),
     logTargetRequest: vi.fn(),
+    logProviderResponse: vi.fn(),
+    logConvertedResponse: vi.fn(),
     logError: vi.fn(),
   })),
 }));
@@ -38,7 +40,8 @@ vi.mock("../../open-sse/utils/streamHandler.js", () => ({
   })),
 }));
 
-vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
+vi.mock("../../open-sse/services/tokenRefresh.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   refreshWithRetry: vi.fn(),
 }));
 
@@ -88,9 +91,11 @@ vi.mock("../../open-sse/translator/concerns/prefetch.js", () => ({
   prefetchRemoteImages: vi.fn(async () => 0),
 }));
 
-vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", () => ({
+vi.mock("../../open-sse/handlers/chatCore/requestDetail.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   buildRequestDetail: vi.fn((detail) => detail),
   extractRequestConfig: vi.fn((body, stream) => ({ body, stream })),
+  saveUsageStats: vi.fn(),
 }));
 
 vi.mock("../../open-sse/utils/error.js", () => ({
@@ -103,6 +108,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(() => Promise.resolve()),
   saveRequestDetail: vi.fn(() => Promise.resolve()),
+  emitRequestError: vi.fn(),
 }));
 
 const FORCED = ["openai", "codex", "commandcode"];
@@ -155,5 +161,39 @@ describe("forceStream provider config", { timeout: 20_000 }, () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+  });
+
+  it("returns clean application/json (without SSE data: [DONE] trailer) when body.stream is omitted and upstream returns JSON", async () => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const jsonPayload = {
+      id: "chatcmpl-123",
+      object: "chat.completion",
+      choices: [{ index: 0, message: { role: "assistant", content: "cleaned text" }, finish_reason: "stop" }],
+    };
+    executeMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify(jsonPayload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      url: "https://example.com/v1/chat/completions",
+      headers: {},
+      transformedBody: {},
+    });
+
+    const body = { model: "personal/gpt-6-luna", messages: [{ role: "user", content: "hi" }] };
+    const res = await handleChatCore({
+      body,
+      modelInfo: { provider: "openai-compatible-chat-679efd16-1ced-4571-91d2-8943d42c6e15", model: "gpt-6-luna" },
+      credentials: { apiKey: "sk-test" },
+      clientRawRequest: { endpoint: "/v1/chat/completions", body, headers: {} },
+      connectionId: "test-connection",
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.response.headers.get("content-type")).toContain("application/json");
+    const rawText = await res.response.text();
+    expect(rawText).not.toContain("data: [DONE]");
+    expect(JSON.parse(rawText).choices[0].message.content).toBe("cleaned text");
   });
 });
