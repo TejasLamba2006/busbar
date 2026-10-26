@@ -8,6 +8,8 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
   { match: /claude/i, drop: ["temperature"] },
+  // OpenAI / Azure OpenAI GPT-5.6+ and GPT-6+ families reject non-default temperature (!== 1) with 400 unsupported_value.
+  { match: /(?:^|\/)gpt-(?:5\.6|[6-9]|\d{2,})/i, dropNonDefaultTemperature: true },
   // GitHub Copilot gpt-5.4: temperature unsupported.
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
@@ -70,6 +72,9 @@ export function stripUnsupportedParams(provider, model, body) {
     }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
+    }
+    if (rule.dropNonDefaultTemperature && body.temperature !== undefined && body.temperature !== 1) {
+      delete body.temperature;
     }
     // Per-message field drop (assistant turns only — that is where clients replay reasoning).
     if (Array.isArray(rule.dropMessageFields) && Array.isArray(body.messages)) {

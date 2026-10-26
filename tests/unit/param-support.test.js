@@ -160,4 +160,16 @@ describe("stripUnsupportedParams", () => {
 
     expect(body).toEqual({ max_tokens: 50 });
   });
+
+  it("drops temperature for gpt-5.6+ and gpt-6+ models across providers", () => {
+    for (const [provider, model] of [
+      ["openai", "gpt-6-luna"],
+      ["openai-compatible-chat-679efd16-1ced-4571-91d2-8943d42c6e15", "gpt-6-luna"],
+      ["openai-compatible-chat-679efd16-1ced-4571-91d2-8943d42c6e15", "gpt-5.6-sol"],
+    ]) {
+      const body = { temperature: 0.3, max_completion_tokens: 16 };
+      stripUnsupportedParams(provider, model, body);
+      expect(body).toEqual({ max_completion_tokens: 16 });
+    }
+  });
 });

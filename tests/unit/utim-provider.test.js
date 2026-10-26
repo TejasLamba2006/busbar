@@ -102,6 +102,8 @@ describe("utim provider", () => {
     expect(out.messages[1].tool_calls[0].function.name).toBe("mcp_playwright_browser_navigate");
     expect(takeRenamedToolNames(body).get("mcp_playwright_browser_navigate")).toBe(name);
     expect(takeRenamedToolNames(out).get("mcp_playwright_browser_navigate")).toBe(name);
+    expect(body.tools[0].function.name).toBe(name);
+    expect(ex.transformRequest("antropic/claude-opus-5", body, true, {}).tools[0].function.name).toBe("mcp_playwright_browser_navigate");
   });
 
   it("execute() retries when the streaming turn is empty", async () => {

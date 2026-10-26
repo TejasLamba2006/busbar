@@ -18,6 +18,7 @@ function sanitizeToolArgs(toolName, argsJson) {
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
+    if (args && typeof args === "object" && "_placeholder" in args) delete args._placeholder;
     return JSON.stringify(args);
   } catch {
     return argsJson;

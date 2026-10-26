@@ -91,6 +91,12 @@ export function extractThinking(body) {
     }
   }
 
+  // Qwen / vLLM / llama.cpp chat_template_kwargs shape (e.g. open-whispr sends
+  // chat_template_kwargs: { enable_thinking: false } alongside reasoning_effort).
+  const ctkThinking = body.chat_template_kwargs?.enable_thinking;
+  if (ctkThinking === false) return { mode: "none" };
+  if (ctkThinking === true) return { mode: "auto" };
+
   // Qwen shape
   if (body.enable_thinking === false) return { mode: "none" };
   if (body.enable_thinking === true) {
@@ -249,6 +255,7 @@ function stripAll(body) {
   delete body.thinkingConfig;
   delete body.enable_thinking;
   delete body.thinking_budget;
+  delete body.chat_template_kwargs;
   delete body.output_config;
   if (body.generationConfig) delete body.generationConfig.thinkingConfig;
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;

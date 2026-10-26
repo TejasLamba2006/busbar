@@ -55,6 +55,12 @@ describe("extractThinking", () => {
   it("qwen enable_thinking false", () => {
     expect(extractThinking({ enable_thinking: false })).toEqual({ mode: "none" });
   });
+  it("chat_template_kwargs.enable_thinking false and stripped on non-qwen targets", () => {
+    expect(extractThinking({ chat_template_kwargs: { enable_thinking: false } })).toEqual({ mode: "none" });
+    const out = apply("openai", "gpt-6-luna", { reasoning_effort: "none", chat_template_kwargs: { enable_thinking: false } }, "openai");
+    expect(out.chat_template_kwargs).toBeUndefined();
+    expect(out.reasoning_effort).toBe("none");
+  });
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
   });

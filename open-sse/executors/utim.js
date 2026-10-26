@@ -47,13 +47,34 @@ const shorten = (str) =>
     ? `${str.slice(0, 300)} ...[full in ctx_part_0..N]`
     : str;
 
+function compactJsonValue(v) {
+  if (typeof v === "string") return shorten(v);
+  if (Array.isArray(v)) return v.slice(0, 15).map(compactJsonValue);
+  if (v && typeof v === "object") {
+    return Object.fromEntries(Object.entries(v).slice(0, 20).map(([k, val]) => [k, compactJsonValue(val)]));
+  }
+  return v;
+}
+
+function compactToolCallArguments(argsStr) {
+  if (typeof argsStr !== "string" || argsStr.length <= 2000) return argsStr;
+  try {
+    return JSON.stringify(compactJsonValue(JSON.parse(argsStr)));
+  } catch {
+    return argsStr;
+  }
+}
+
 function compactMessage(msg) {
   const out = { ...msg };
   if (typeof out.content === "string") out.content = shorten(out.content);
   else if (Array.isArray(out.content)) out.content = shorten(extractContentText(out.content));
+  // Keep tool_calls[].function.arguments valid JSON: compact inner string values only when >2000 chars.
   if (Array.isArray(out.tool_calls)) {
     out.tool_calls = out.tool_calls.map((tc) =>
-      tc?.function ? { ...tc, function: { ...tc.function, arguments: shorten(tc.function.arguments) } } : tc
+      tc?.function?.arguments
+        ? { ...tc, function: { ...tc.function, arguments: compactToolCallArguments(tc.function.arguments) } }
+        : tc
     );
   }
   return out;
@@ -129,10 +150,36 @@ export function packUtimOverflowMessages(body) {
   };
 }
 
+// Kiro's OpenAI-to-Bedrock stream converter crashes and emits an empty turn (`data: [DONE]`)
+// whenever the model calls a tool whose schema has empty `properties: {}`. Inject a dummy
+// optional `_placeholder` property on real (non-ctx_part_*) tools with empty properties.
+function ensureNonEmptyUtimToolProperties(tools) {
+  if (!Array.isArray(tools)) return tools;
+  return tools.map((t) => {
+    const fn = t?.function;
+    if (!fn || typeof fn.name !== "string" || fn.name.startsWith("ctx_part_")) return t;
+    const params = fn.parameters;
+    const props = params?.properties;
+    if (props && typeof props === "object" && !Array.isArray(props) && Object.keys(props).length > 0) return t;
+    return {
+      ...t,
+      function: {
+        ...fn,
+        parameters: {
+          ...(params && typeof params === "object" ? params : { type: "object" }),
+          type: "object",
+          properties: { _placeholder: { type: "boolean" } },
+        },
+      },
+    };
+  });
+}
+
 // Kiro collapses "__" to "_" in tool names (mcp__x__y -> mcp_x_y), so send the collapsed
 // spelling ourselves and return sent -> original for chatCore to restore on the way back.
 function sanitizeUtimToolNames(body) {
   if (!body || !Array.isArray(body.tools)) return null;
+  body.tools = ensureNonEmptyUtimToolProperties(body.tools);
   const declared = body.tools.map((t) => t?.function?.name).filter((n) => typeof n === "string" && !n.startsWith("ctx_part_"));
   const taken = new Set(declared);
   const forward = new Map();
@@ -165,7 +212,8 @@ export class UtimExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const transformed = super.transformRequest(model, body, stream, credentials);
+    // Copy so retries re-run on the caller's untouched body instead of an already-renamed one.
+    const transformed = { ...super.transformRequest(model, body, stream, credentials) };
     const renamed = sanitizeUtimToolNames(transformed);
     recordRenamedToolNames(body, renamed);
     recordRenamedToolNames(transformed, renamed);
@@ -185,6 +233,8 @@ export class UtimExecutor extends DefaultExecutor {
       if (res && !res.ok) retry = res.status >= 500 || res.status === 429;
       else if (stream && res?.ok) retry = (await probeStreamingResponseForEmptyTurn(res)).empty;
       if (!retry || last) return result;
+      void res?.body?.cancel?.().catch(() => {});
+      if (signal?.aborted) return result;
       await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
     }
     return result;
