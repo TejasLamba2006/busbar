@@ -97,7 +97,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -163,7 +163,9 @@ export class BaseExecutor {
           method: "POST",
           headers,
           body: bodyStr,
-          signal: mergedSignal
+          signal: mergedSignal,
+          // Provider-specific direct transport (OpenCode TLS impersonation); proxy routing still wins.
+          ...(directFetch ? { directFetch } : {}),
         }, activeProxyOptions);
         clearTimeout(connectTimer);
         const ct = response.headers?.get?.("content-type") || "";
