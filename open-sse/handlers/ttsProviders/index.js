@@ -10,6 +10,7 @@ import xiaomiMimo from "./xiaomi-mimo.js";
 import selfhostedTts from "./selfhostedTts.js";
 import createOpenAICompatibleNodeTtsAdapter from "./openaiCompatNode.js";
 import { isOpenAICompatibleNode } from "../customMediaNode.js";
+import ollamaLocal from "./ollamaLocal.js";
 import { FORMAT_HANDLERS } from "./genericFormats.js";
 import { parseModelVoice } from "./_base.js";
 
@@ -24,6 +25,7 @@ const SPECIAL_ADAPTERS = {
   gemini,
   "xiaomi-mimo": xiaomiMimo,
   "selfhosted-tts": selfhostedTts,
+  "ollama-local": ollamaLocal,
 };
 
 export function getTtsAdapter(provider) {
