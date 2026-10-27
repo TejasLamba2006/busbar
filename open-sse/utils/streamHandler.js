@@ -1,6 +1,8 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_KEEPALIVE_INTERVAL_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+
+const KEEPALIVE_BYTES = new TextEncoder().encode(": keepalive\n\n");
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -108,14 +110,25 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  *
  * @param {function} [onAbortTerminal] - Receives a human-readable abort
  * message and returns terminal SSE bytes to emit downstream.
+ * @param {number} [keepaliveIntervalMs] - Emit `: keepalive\n\n` SSE comments
+ * when downstream output is idle so Cloudflare/nginx do not time out with 524.
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, keepaliveIntervalMs = STREAM_KEEPALIVE_INTERVAL_MS) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
+  let keepaliveTimer = null;
+
+  const stopKeepalive = () => {
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+      keepaliveTimer = null;
+    }
+  };
 
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
+    stopKeepalive();
     if (terminalEmitted || !onAbortTerminal) return;
     terminalEmitted = true;
     try {
@@ -125,6 +138,23 @@ export function createDisconnectAwareStream(transformStream, streamController, o
   };
 
   return new ReadableStream({
+    start(controller) {
+      if (keepaliveIntervalMs > 0) {
+        keepaliveTimer = setInterval(() => {
+          if (!streamController.isConnected()) {
+            stopKeepalive();
+            return;
+          }
+          try {
+            controller.enqueue(KEEPALIVE_BYTES);
+          } catch {
+            stopKeepalive();
+          }
+        }, keepaliveIntervalMs);
+        keepaliveTimer.unref?.();
+      }
+    },
+
     async pull(controller) {
       if (!streamController.isConnected()) {
         emitTerminal(controller);
@@ -136,12 +166,14 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         const { done, value } = await reader.read();
 
         if (done) {
+          stopKeepalive();
           streamController.handleComplete();
           controller.close();
           return;
         }
         controller.enqueue(value);
       } catch (error) {
+        stopKeepalive();
         const wasConnected = streamController.isConnected();
         // Controller already closed = downstream ended; not an upstream error, skip noisy log.
         const msg0 = error?.message || "";
@@ -179,6 +211,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     },
 
     cancel(reason) {
+      stopKeepalive();
       streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
       writer.abort();

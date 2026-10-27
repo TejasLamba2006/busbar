@@ -333,9 +333,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   if (
     (Number(status) === 502 || Number(status) === 504) &&
-    /FUNCTION_INVOCATION_TIMEOUT|An error occurred with your deployment|DEPLOYMENT_/i.test(String(errorText || ""))
+    /FUNCTION_INVOCATION_TIMEOUT|An error occurred with your deployment|DEPLOYMENT_|fetch connect timeout/i.test(String(errorText || ""))
   ) {
-    log.warn("AUTH", `Skipping account lock for ${connectionId.slice(0, 8)}: relay/proxy timeout (${status})`);
+    log.warn("AUTH", `Skipping account lock for ${connectionId.slice(0, 8)}: relay/connect timeout (${status})`);
     return { shouldFallback: true, cooldownMs: 0 };
   }
   const connections = await getProviderConnections({ provider });

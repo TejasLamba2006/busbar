@@ -82,6 +82,27 @@ describe("BaseExecutor.execute — network error retry/fallback", () => {
     expect(thrown?.message).toBe("boom");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not retry the same url on connect timeout (prevents Cloudflare 524 double-wait)", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api", timeoutMs: 15, retry: { 502: { attempts: 3, delayMs: 0 } } });
+    fetchMock.mockImplementationOnce(async (_url, opts) => {
+      return await new Promise((_resolve, reject) => {
+        opts.signal.addEventListener("abort", () => {
+          const err = new Error("fetch connect timeout");
+          err.name = "AbortError";
+          reject(err);
+        }, { once: true });
+      });
+    });
+    let thrown = null;
+    try {
+      await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown?.message).toBe("fetch connect timeout");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("BaseExecutor.execute — computeRetryDelay hook veto", () => {

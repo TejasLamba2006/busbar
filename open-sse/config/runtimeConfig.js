@@ -60,8 +60,14 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Env: EMPTY_PEEK_DEADLINE_MS.
 export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000);
 
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
+// 90s gives large-context (500k–1M token) cold prefills headroom while staying inside
+// Cloudflare's 100s–120s origin response timeout window.
+export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 90 * 1000);
+
+// SSE keepalive heartbeat interval (ms) so reverse proxies (Cloudflare/nginx) never close
+// long-running reasoning streams with 524 during silent thinking stretches.
+export const STREAM_KEEPALIVE_INTERVAL_MS = envMs("STREAM_KEEPALIVE_INTERVAL_MS", 15 * 1000);
 
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);

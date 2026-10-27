@@ -149,6 +149,19 @@ describe("detectClassifierFormat", () => {
     expect(detectClassifierFormat(SEVERITY_CLASSIFIER_BODY)).toBe("severity");
   });
 
+  it("returns severity for stage 2 thinking classifier (no stop_sequences, system mentions Output <severity>N</severity>)", () => {
+    const stage2Body = {
+      system: [
+        {
+          type: "text",
+          text: "You are a security monitor for autonomous AI coding agents.\n## Output Format\nOutput <severity>N</severity> where N is an integer 0-100.",
+        },
+      ],
+      messages: [{ role: "user", content: "evaluate" }],
+    };
+    expect(detectClassifierFormat(stage2Body)).toBe("severity");
+  });
+
   it("defaults to block when stop_sequences is missing/empty", () => {
     expect(detectClassifierFormat({})).toBe("block");
     expect(detectClassifierFormat({ stop_sequences: [] })).toBe("block");

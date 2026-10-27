@@ -75,9 +75,21 @@ export function shouldDefaultAllowClassifier(sourceFormat, body, mode) {
  * an unrelated app that merely happens to use `</severity>` as a stop token is
  * never affected.
  */
+const SEVERITY_OUTPUT_MARKER = "Output <severity>N</severity>";
+const SEVERITY_RESPOND_MARKER = "respond with <severity>N</severity>";
+
 export function detectClassifierFormat(body) {
   const stopSequences = body?.stop_sequences;
   if (Array.isArray(stopSequences) && stopSequences.includes("</severity>")) {
+    return "severity";
+  }
+  if (
+    extractSystemTexts(body).some(
+      (text) =>
+        text.includes(SEVERITY_OUTPUT_MARKER) ||
+        text.toLowerCase().includes(SEVERITY_RESPOND_MARKER),
+    )
+  ) {
     return "severity";
   }
   return "block";

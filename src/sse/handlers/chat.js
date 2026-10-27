@@ -13,6 +13,12 @@ import { getSettings } from "@/lib/localDb";
 import { emitRequestError } from "@/lib/usageDb.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
+import {
+  shouldDefaultAllowClassifier,
+  detectClassifierFormat,
+  buildDefaultAllowClaudeMessage,
+} from "open-sse/handlers/chatCore/claudeClassifierCompat.js";
+import { detectFormat } from "open-sse/services/provider.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
@@ -104,6 +110,17 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Short-circuit Claude Code auto-mode classifier before credential lookup or
+  // upstream dispatch so unconfigured default probe models (e.g. claude-sonnet-5)
+  // or large-transcript classifier calls return an instant ALLOW instead of 404/timeout.
+  const entrySourceFormat = (request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null) || detectFormat(body);
+  const classifierMode = settings.claudeClassifierCompat || "off";
+  if (shouldDefaultAllowClassifier(entrySourceFormat, body, classifierMode)) {
+    const classifierFormat = detectClassifierFormat(body);
+    log.warn("CHAT", `classifier compat=${classifierMode} format=${classifierFormat} | short-circuit default-allow (${modelStr})`);
+    return buildDefaultAllowClaudeMessage(modelStr, classifierFormat).response;
   }
 
   // Per-key access control: a restricted key may call only its listed combos and
