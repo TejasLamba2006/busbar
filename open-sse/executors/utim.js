@@ -231,7 +231,7 @@ export class UtimExecutor extends DefaultExecutor {
       const last = attempt >= MAX_UTIM_ATTEMPTS - 1;
       let retry = false;
       if (res && !res.ok) retry = res.status >= 500 || res.status === 429;
-      else if (stream && res?.ok) retry = (await probeStreamingResponseForEmptyTurn(res)).empty;
+      else if (stream && res?.ok) retry = (await probeStreamingResponseForEmptyTurn(res, undefined, 0)).empty;
       if (!retry || last) return result;
       void res?.body?.cancel?.().catch(() => {});
       if (signal?.aborted) return result;

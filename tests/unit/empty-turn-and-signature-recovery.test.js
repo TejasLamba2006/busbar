@@ -53,6 +53,29 @@ describe("probeStreamingResponseForEmptyTurn", () => {
     expect(payloadHasUsableOutput({ candidates: [{ content: { parts: [{ thought: true, text: "thinking..." }] } }] })).toBe(false);
     expect(payloadHasUsableOutput({ type: "response.output_text.delta", delta: "hi" })).toBe(true);
   });
+
+  it("releases a slow thinking stream after maxMs so Cloudflare never times out with 524", async () => {
+    const enc = new TextEncoder();
+    const res = new Response(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(enc.encode('data: {"candidates":[{"content":{"parts":[{"thought":true,"text":"thinking..."}]}}]}\n\n'));
+          setTimeout(() => {
+            c.enqueue(enc.encode('data: {"candidates":[{"content":{"parts":[{"text":"final answer"}]}}]}\n\n'));
+            c.close();
+          }, 250);
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } }
+    );
+    const t0 = Date.now();
+    const verdict = await probeStreamingResponseForEmptyTurn(res, 128_000, 60);
+    expect(verdict.empty).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(200);
+    const fullText = await res.text();
+    expect(fullText).toContain("thinking...");
+    expect(fullText).toContain("final answer");
+  });
 });
 
 describe("Anthropic thinking-signature one-shot recovery", () => {

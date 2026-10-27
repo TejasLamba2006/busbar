@@ -5,6 +5,12 @@
 // next account or combo model.
 
 export const EMPTY_TURN_PROBE_MAX_BYTES = 128_000;
+// Bound how long the empty-turn probe waits once the stream starts emitting bytes
+// (e.g. long thinking streams on Vertex/Gemini or Claude behind Cloudflare's 100s
+// HTTP response-header timeout). If the stream is actively sending frames for >12s
+// without an error, flush headers and pipe to the client immediately so Cloudflare
+// never kills the request with 524.
+export const EMPTY_TURN_PROBE_MAX_MS = 12_000;
 
 function concatChunks(chunks, total) {
   const out = new Uint8Array(total);
@@ -136,7 +142,7 @@ function scanLines(lines) {
  * arrives (or when the buffer cap is exceeded), or `{ empty: true, reason }` if the
  * stream ends or errors without producing any usable output.
  */
-export async function probeStreamingResponseForEmptyTurn(response, maxBytes = EMPTY_TURN_PROBE_MAX_BYTES) {
+export async function probeStreamingResponseForEmptyTurn(response, maxBytes = EMPTY_TURN_PROBE_MAX_BYTES, maxMs = EMPTY_TURN_PROBE_MAX_MS) {
   if (!response?.body || typeof response.clone !== "function") {
     return { empty: false };
   }
@@ -159,15 +165,36 @@ export async function probeStreamingResponseForEmptyTurn(response, maxBytes = EM
   let consumed = 0;
   let sawAnyData = false;
   let streamError = null;
+  let firstDataAt = 0;
 
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      let readResult;
+      if (sawAnyData && maxMs > 0) {
+        const remaining = maxMs - (Date.now() - firstDataAt);
+        if (remaining <= 0) {
+          void reader.cancel().catch(() => {});
+          return { empty: false };
+        }
+        let timer;
+        const timedOut = await Promise.race([
+          reader.read().then((r) => { clearTimeout(timer); readResult = r; return false; }),
+          new Promise((resolve) => { timer = setTimeout(() => resolve(true), remaining); }),
+        ]);
+        if (timedOut) {
+          void reader.cancel().catch(() => {});
+          return { empty: false };
+        }
+      } else {
+        readResult = await reader.read();
+      }
+      const { done, value } = readResult;
       if (done) break;
       if (!value || value.byteLength === 0) continue;
+      if (!sawAnyData) firstDataAt = Date.now();
       sawAnyData = true;
       total += value.byteLength;
-      if (total > maxBytes) {
+      if (total > maxBytes || (maxMs > 0 && Date.now() - firstDataAt >= maxMs)) {
         void reader.cancel().catch(() => {});
         return { empty: false };
       }
