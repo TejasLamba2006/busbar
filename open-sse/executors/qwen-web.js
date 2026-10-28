@@ -150,42 +150,128 @@ function errorResponse(status, message, code = `HTTP_${status}`) {
 }
 
 const cachedEmailTokens = new Map(); // email -> { token, expiresAt }
+const QWEN_TOKEN_MARGIN_MS = 60_000;
 
-async function getOrOpenQwenPage(credentials) {
-  let { token, cookieHeader, email, password } = extractQwenCredential(credentials);
-  if (!token && email) {
-    const cached = cachedEmailTokens.get(email);
-    if (cached && cached.expiresAt > Date.now() + 60_000) {
-      token = cached.token;
-    }
+function jwtExpiryMs(token) {
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const exp = JSON.parse(Buffer.from(payload, "base64").toString("utf8")).exp;
+    return exp ? Number(exp) * 1000 : 0;
+  } catch {
+    return 0;
   }
+}
 
-  const digest = createHash("sha256")
-    .update(String(credentials?.connectionId || "qwen"))
-    .update("\0")
-    .update(token || email || cookieHeader)
-    .digest("hex")
-    .slice(0, 16);
-
-  const localStorage = {};
-  if (token) {
-    localStorage.token = token;
-    const expMs = Date.now() + 3600 * 1000;
-    localStorage.at_expire_time = String(expMs);
-    localStorage.qwen_access_token_state = JSON.stringify({
+function seedLocalStorage(token, digest) {
+  const expMs = jwtExpiryMs(token) || Date.now() + 3600 * 1000;
+  return {
+    token,
+    at_expire_time: String(expMs),
+    qwen_access_token_state: JSON.stringify({
       version: 1,
       stateId: `busbar-${digest}`,
       token,
       expiresAt: expMs,
       updatedAt: Date.now(),
       sourceId: "busbar",
-    });
+    }),
+  };
+}
+
+// Qwen reloads the page once after the Aliyun WAF cookie is set, so evaluate() can hit a
+// destroyed context. Poll until Baxia is initialised on the settled page.
+async function waitForBaxia(page, timeoutMs = 10000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    try {
+      const ready = await page.evaluate(() =>
+        Boolean(window.baxiaInitialized && window.__baxia__?.getFYModule?.getUidToken?.())
+      );
+      if (ready) return true;
+    } catch {
+      // navigation in flight
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
+async function signInWithEmail(page, email, password) {
+  const passwordHash = createHash("sha256").update(password).digest("hex");
+  let lastError = "Qwen sign-in failed";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await waitForBaxia(page);
+    let res;
+    try {
+      res = await page.evaluate(
+        async ({ email, passwordHash, version }) =>
+          new Promise((resolve) => {
+            const timer = setTimeout(() => resolve({ status: -1, text: "" }), 12000);
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "https://auth.qwen.ai/api/v2/auths/signin", true);
+            xhr.withCredentials = true;
+            xhr.setRequestHeader("Accept", "application/json");
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.setRequestHeader("source", "web");
+            xhr.setRequestHeader("Version", version);
+            xhr.setRequestHeader("X-Request-Id", crypto.randomUUID());
+            xhr.setRequestHeader("Timezone", new Date().toString().replace(/\s*\(.+\)$/, ""));
+            xhr.setRequestHeader("x-request-origin", "https://chat.qwen.ai");
+            xhr.onload = () => { clearTimeout(timer); resolve({ status: xhr.status, text: xhr.responseText }); };
+            xhr.onerror = () => { clearTimeout(timer); resolve({ status: 0, text: "" }); };
+            xhr.send(JSON.stringify({ email, password: passwordHash }));
+          }),
+        { email, passwordHash, version: QWEN_VERSION }
+      );
+    } catch (err) {
+      lastError = err?.message || lastError;
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+    let json = null;
+    try { json = JSON.parse(res.text); } catch { /* WAF challenge page or timeout: retry */ }
+    if (!json) {
+      lastError = "Qwen sign-in blocked by WAF challenge";
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+    const token = json?.data?.access_token || json?.data?.token || "";
+    if (json.success && token) {
+      return { token, expiresAt: jwtExpiryMs(token) || Date.now() + 10 * 60 * 1000 };
+    }
+    // Definitive rejection (bad password etc.): do not retry.
+    throw new Error(json?.data?.details || json?.data?.message || "Qwen sign-in failed");
+  }
+  throw new Error(lastError);
+}
+
+// forceFresh drops the pooled browser context (cookies + quota fingerprint) and cached token,
+// which is how Qwen's per-session limits reset.
+async function getOrOpenQwenPage(credentials, { forceFresh = false } = {}) {
+  let { token, cookieHeader, email, password } = extractQwenCredential(credentials);
+  const useEmail = !token && email && password;
+
+  const digest = createHash("sha256")
+    .update(String(credentials?.connectionId || "qwen"))
+    .update("\0")
+    .update(useEmail ? `email:${email}` : token || cookieHeader)
+    .digest("hex")
+    .slice(0, 16);
+
+  if (forceFresh) {
+    if (useEmail) cachedEmailTokens.delete(email);
+    await releaseBrowserContext(`qwen-web:${digest}`).catch(() => {});
+  }
+
+  if (useEmail) {
+    const cached = cachedEmailTokens.get(email);
+    if (cached && cached.expiresAt > Date.now() + QWEN_TOKEN_MARGIN_MS) token = cached.token;
   }
 
   const pooled = await acquireBrowserContext(`qwen-web:${digest}`, {
     cookieDomain: ".qwen.ai",
     ...(cookieHeader ? { cookieString: cookieHeader } : {}),
-    localStorage,
+    localStorage: token ? seedLocalStorage(token, digest) : {},
     localStorageOrigin: QWEN_WEB_BASE,
     warmupUrl: `${QWEN_WEB_BASE}/`,
     userAgent: DEFAULT_UA,
@@ -199,82 +285,17 @@ async function getOrOpenQwenPage(credentials) {
     await page.goto(`${QWEN_WEB_BASE}/`, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
   }
 
-  // If the user supplied email:password instead of a raw JWT, sign in inside the browser context once
-  if (!token && email && password) {
-    const passwordHash = createHash("sha256").update(password).digest("hex");
-    const signInResult = await page.evaluate(
-      async ({ email, passwordHash, version }) => {
-        for (let i = 0; i < 15; i++) {
-          if (window.__baxia__?.getFYModule?.getUidToken?.()) break;
-          await new Promise((r) => setTimeout(r, 200));
-        }
-        return await new Promise((resolve) => {
-          const timer = setTimeout(() => resolve({ ok: false, error: "Qwen sign-in timed out (WAF challenge)" }), 12000);
-          const xhr = new XMLHttpRequest();
-          xhr.open("POST", "https://auth.qwen.ai/api/v2/auths/signin", true);
-          xhr.withCredentials = true;
-          xhr.setRequestHeader("Accept", "application/json");
-          xhr.setRequestHeader("Content-Type", "application/json");
-          xhr.setRequestHeader("source", "web");
-          xhr.setRequestHeader("Version", version);
-          xhr.setRequestHeader("X-Request-Id", crypto.randomUUID());
-          xhr.setRequestHeader("Timezone", new Date().toString().replace(/\s*\(.+\)$/, ""));
-          xhr.setRequestHeader("x-request-origin", "https://chat.qwen.ai");
-          xhr.onload = () => {
-            clearTimeout(timer);
-            try {
-              const json = JSON.parse(xhr.responseText);
-              const tok = json?.data?.access_token || json?.data?.token || json?.token || "";
-              if (json?.success && tok) {
-                const expMs = json?.data?.expires_at ? Number(json.data.expires_at) * 1000 : Date.now() + 3600 * 1000;
-                localStorage.setItem("token", tok);
-                localStorage.setItem("at_expire_time", String(expMs));
-                localStorage.setItem(
-                  "qwen_access_token_state",
-                  JSON.stringify({
-                    version: 1,
-                    stateId: crypto.randomUUID(),
-                    token: tok,
-                    expiresAt: expMs,
-                    updatedAt: Date.now(),
-                    sourceId: "busbar",
-                  })
-                );
-                resolve({ ok: true, token: tok, expiresAt: expMs });
-              } else {
-                resolve({
-                  ok: false,
-                  error: json?.data?.details || json?.data?.message || "Qwen sign-in failed",
-                });
-              }
-            } catch {
-              resolve({ ok: false, error: "Qwen sign-in returned non-JSON response" });
-            }
-          };
-          xhr.onerror = () => {
-            clearTimeout(timer);
-            resolve({ ok: false, error: "Qwen sign-in network error" });
-          };
-          xhr.send(JSON.stringify({ email, password: passwordHash }));
-        });
-      },
-      { email, passwordHash, version: QWEN_VERSION }
-    );
-    if (!signInResult?.ok || !signInResult?.token) {
-      throw new Error(signInResult?.error || "Qwen email/password sign-in failed");
-    }
-    token = signInResult.token;
-    cachedEmailTokens.set(email, { token, expiresAt: signInResult.expiresAt || Date.now() + 3600 * 1000 });
+  if (useEmail && !token) {
+    // Access tokens live ~15 min; sign in again whenever the cached one is gone.
+    const signed = await signInWithEmail(page, email, password);
+    token = signed.token;
+    cachedEmailTokens.set(email, signed);
   } else if (token) {
-    // Re-ensure localStorage.token is set in case Qwen's boot refresh cleared it
+    // Qwen's boot-time refresh wipes localStorage.token when it has no auth cookies; restore it.
     await page
-      .evaluate((t) => {
-        if (localStorage.getItem("token") !== t) {
-          const expMs = Date.now() + 3600 * 1000;
-          localStorage.setItem("token", t);
-          localStorage.setItem("at_expire_time", String(expMs));
-        }
-      }, token)
+      .evaluate((seed) => {
+        for (const [k, v] of Object.entries(seed)) localStorage.setItem(k, v);
+      }, seedLocalStorage(token, digest))
       .catch(() => {});
   }
 
@@ -367,8 +388,9 @@ export class QwenWebExecutor extends BaseExecutor {
       };
     }
 
-    const { page, digest, token: resolvedToken } = pageInfo;
-    const token = resolvedToken || initialToken;
+    let { page, digest, token: resolvedToken } = pageInfo;
+    let token = resolvedToken || initialToken;
+    const canRefresh = Boolean(!initialToken && email && password);
     log?.info?.(
       "QWEN-WEB",
       `model=${upstreamModel}, thinking=${thinkingEnabled}, search=${searchEnabled}, stream=${stream !== false}`
@@ -609,10 +631,29 @@ export class QwenWebExecutor extends BaseExecutor {
       }
     };
 
+    // Expired token / WAF block / exhausted quota: drop the browser context (resets the
+    // per-session limits), sign in again and retry once. Only safe before output was emitted.
+    const isRetryable = (r) =>
+      !r?.ok && (r?.status === 401 || r?.status === 403 || r?.status === 429 ||
+        /unauthori|expired|token|quota|limit|too many|waf|verif/i.test(String(r?.error || "")));
+    const runWithRefresh = async (onDelta) => {
+      let emitted = false;
+      const tracked = onDelta ? (d) => { emitted = true; onDelta(d); } : null;
+      let result = await runInPageTurn(tracked);
+      if (canRefresh && isRetryable(result) && !emitted) {
+        log?.info?.("QWEN-WEB", `refreshing session after: ${result?.error}`);
+        const fresh = await getOrOpenQwenPage(credentials, { forceFresh: true });
+        ({ page, digest } = fresh);
+        token = fresh.token;
+        result = await runInPageTurn(tracked);
+      }
+      return result;
+    };
+
     try {
       // Tool calls or non-streaming: buffer full response so tool XML can be parsed
       if (!stream || hasTools) {
-        const result = await runInPageTurn(null);
+        const result = await runWithRefresh(null);
         if (!result?.ok) {
           return {
             response: errorResponse(result?.status || 502, result?.error || "Qwen Web request failed", result?.code),
@@ -705,7 +746,7 @@ export class QwenWebExecutor extends BaseExecutor {
             choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
           })));
           try {
-            const result = await runInPageTurn((delta) => {
+            const result = await runWithRefresh((delta) => {
               if (delta?.reasoning) {
                 controller.enqueue(encoder.encode(sseChunk({
                   id: cid, object: "chat.completion.chunk", created, model: clientModel,
