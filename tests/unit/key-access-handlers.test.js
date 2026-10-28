@@ -282,13 +282,19 @@ describe("video: a body without a readable model is denied for restricted keys",
 describe("/v1/models routes filter by key", () => {
   const list = async (k) => (await (await modelsRoute.GET(new Request("http://localhost/v1/models", { headers: auth(k) }))).json()).data.map((m) => m.id);
 
-  it("unrestricted sees the full catalog; restricted keys see only their entries", async () => {
+  it("unrestricted sees the full catalog (including media models); restricted keys see only their entries", async () => {
     const all = await list("sk-open");
     expect(all).toContain("Main");
     const someModel = all.find((id) => id.startsWith("openai/"));
     expect(someModel).toBeTruthy();
-    fx.keys["sk-mix"] = { id: "x", name: "mix", isActive: true, access: { restricted: true, allow: ["Main", someModel.toUpperCase()] } };
-    expect(await list("sk-mix")).toEqual(["Main", someModel]);
+    // Media models are also exposed in GET /v1/models
+    expect(all).toContain("el/eleven_flash_v2_5");
+    expect(all).toContain("fish/s2.1-pro-free");
+    expect(all).toContain("jina/jina-embeddings-v3");
+    expect(all).toContain("tavily/search");
+    expect(all).toContain("ts/jev-latest");
+    fx.keys["sk-mix"] = { id: "x", name: "mix", isActive: true, access: { restricted: true, allow: ["Main", someModel.toUpperCase(), "el/eleven_flash_v2_5"] } };
+    expect(await list("sk-mix")).toEqual(["Main", "el/eleven_flash_v2_5", someModel]);
     expect(await list("sk-combo")).toEqual(["Main"]);
     expect(await list("sk-empty")).toEqual([]);
     expect(await list(null)).toEqual(all); // no key: unchanged (middleware governs remote access)

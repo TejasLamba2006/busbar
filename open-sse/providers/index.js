@@ -27,6 +27,17 @@ const MEDIA_KEYS = new Set([
   "modelsFetcher", "mediaPriority", "hiddenKinds",
 ]);
 
+const CONFIG_MODEL_KINDS = [
+  ["ttsConfig", "tts"],
+  ["sttConfig", "stt"],
+  ["embeddingConfig", "embedding"],
+  ["imageConfig", "image"],
+  ["imageToTextConfig", "imageToText"],
+  ["videoConfig", "video"],
+  ["musicConfig", "music"],
+  ["systemoneConfig", "systemone"],
+];
+
 export const PROVIDERS = {};
 export const PROVIDER_MODELS = {};
 export const PROVIDER_OAUTH = {};
@@ -37,7 +48,27 @@ for (const entry of REGISTRY) {
     PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth);
     if (entry.transports) PROVIDERS[entry.id].transports = entry.transports;
   }
-  if (entry.models !== undefined) PROVIDER_MODELS[entry.alias || entry.id] = entry.models.map(normalizeModel);
+  const modelKey = entry.alias || entry.id;
+  const baseModels = entry.models !== undefined ? entry.models.map(normalizeModel) : [];
+  const seenKeyKinds = new Set(baseModels.map((m) => `${m.id}:${m.kind || m.type || "llm"}`));
+  for (const [cfgKey, kind] of CONFIG_MODEL_KINDS) {
+    const cfgModels = entry[cfgKey]?.models || entry.media?.[cfgKey]?.models;
+    if (!Array.isArray(cfgModels)) continue;
+    for (const raw of cfgModels) {
+      const m = normalizeModel(typeof raw === "string" ? { id: raw, kind } : { ...raw, kind: raw.kind || raw.type || kind });
+      const keyKind = `${m.id}:${m.kind || m.type || kind}`;
+      if (!seenKeyKinds.has(keyKind)) {
+        seenKeyKinds.add(keyKind);
+        baseModels.push(m);
+      }
+    }
+  }
+  if (entry.models !== undefined || baseModels.length > 0) {
+    PROVIDER_MODELS[modelKey] = baseModels;
+    if (modelKey !== entry.id && PROVIDER_MODELS[entry.id] === undefined) {
+      PROVIDER_MODELS[entry.id] = baseModels;
+    }
+  }
   if (entry.oauth) PROVIDER_OAUTH[entry.id] = entry.oauth;
   if (entry.modelDiscovery) PROVIDER_MODEL_DISCOVERY[entry.id] = entry.modelDiscovery;
   // Build PROVIDER_MEDIA from top-level fields (post-migration) + legacy entry.media

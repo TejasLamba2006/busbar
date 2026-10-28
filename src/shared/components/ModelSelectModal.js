@@ -7,20 +7,23 @@ import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
 
-// Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
+// Provider order: OAuth first, then Free Tier, then API Key, then Web Cookie (matches dashboard/providers)
 const PROVIDER_ORDER = [
   ...Object.keys(OAUTH_PROVIDERS),
   ...Object.keys(FREE_PROVIDERS),
   ...Object.keys(FREE_TIER_PROVIDERS),
   ...Object.keys(APIKEY_PROVIDERS),
+  ...Object.keys(WEB_COOKIE_PROVIDERS),
 ];
 
 // Providers that need no auth — always show in model selector
-const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
+const NO_AUTH_PROVIDER_IDS = Object.keys({ ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS }).filter(
+  (id) => (FREE_PROVIDERS[id] || FREE_TIER_PROVIDERS[id])?.noAuth
+);
 
 // Providers with per-account live catalogs via /api/providers/[id]/models.
 // Static registry stays as fallback when live fetch fails or is empty.
@@ -89,6 +92,7 @@ export default function ModelSelectModal({
   addedModelValues = [],
   closeOnSelect = true,
   allowProviderWildcard = false,
+  includeAllServiceKinds = false,
 }) {
   const { getCaps } = useModelCaps();
   const [searchQuery, setSearchQuery] = useState("");
@@ -224,7 +228,7 @@ export default function ModelSelectModal({
     if (isOpen) fetchDisabledModels();
   }, [isOpen]);
 
-  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS, ...WEB_COOKIE_PROVIDERS }), []);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -233,12 +237,13 @@ export default function ModelSelectModal({
     // Kinds where the provider IS the model (no per-model selection needed)
     const PROVIDER_AS_MODEL_KINDS = new Set(["webSearch", "webFetch"]);
     // Kinds that map directly to model.type field
-    const TYPED_KINDS = new Set(["image", "video", "tts", "stt", "embedding", "imageToText", "systemone"]);
+    const TYPED_KINDS = new Set(["image", "video", "tts", "stt", "embedding", "imageToText", "systemone", "music"]);
     // For these kinds, providers without hardcoded models can still be picked (provider-as-model fallback)
     const ALLOW_PROVIDER_FALLBACK_KINDS = new Set(["tts", "image", "webFetch"]);
 
     // Filter a models[] array by kindFilter (keep only matching kind)
     const filterByKind = (models) => {
+      if (includeAllServiceKinds && !kindFilter) return models;
       // No kindFilter means the LLM selector. Keep custom models visible because
       // user-added models may have typed capabilities (for example imageToText)
       // while still being valid chat/combo targets.
@@ -250,10 +255,13 @@ export default function ModelSelectModal({
     // Get all active provider IDs from connections (filtered by kindFilter if set)
     const activeConnectionIds = filteredActiveProviders.map(p => p.provider);
 
-    // No-auth providers: filter by kindFilter as well
+    // No-auth providers: filter by kindFilter as well (when !kindFilter and !includeAllServiceKinds, only include LLM no-auth providers)
     const noAuthIds = (kindFilter
       ? NO_AUTH_PROVIDER_IDS.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes(kindFilter))
-      : NO_AUTH_PROVIDER_IDS).filter((id) => !deactivatedProviderIds.has(id));
+      : includeAllServiceKinds
+        ? NO_AUTH_PROVIDER_IDS
+        : NO_AUTH_PROVIDER_IDS.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes("llm"))
+    ).filter((id) => !deactivatedProviderIds.has(id));
 
     const existingNodeIds = new Set((providerNodes || []).map((n) => n?.id).filter(Boolean));
     const compatibleNodeIds = customModels
@@ -264,6 +272,7 @@ export default function ModelSelectModal({
         if (existingNodeIds.size > 0 && !existingNodeIds.has(alias)) return false;
         if (deactivatedProviderIds.has(alias)) return false;
         const kind = getModelKind(model) || "llm";
+        if (includeAllServiceKinds && !kindFilter) return true;
         return kindFilter ? kind === kindFilter : ["llm", "imageToText"].includes(kind);
       })
       .map((model) => model.providerAlias);
@@ -333,14 +342,27 @@ export default function ModelSelectModal({
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
         } else {
-          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
-          const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
+          // LLM/null kind (or all kinds when includeAllServiceKinds is set): merge hardcoded models with user-added models
+          const registeredLlms = includeAllServiceKinds
+            ? customRegisteredModels
+            : customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
           const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
           const hardcoded = getModelsByProviderId(providerId)
-            .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
+            .filter((m) => includeAllServiceKinds || !getModelKind(m) || getModelKind(m) === "llm")
             .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
             .filter((m) => !seen.has(m.value));
           combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
+          if (includeAllServiceKinds) {
+            if (providerInfo.searchConfig && !combined.some((m) => m.value === `${alias}/search`)) {
+              combined.push({ id: "search", name: `${providerInfo.name} (Search)`, value: `${alias}/search`, kind: "webSearch" });
+            }
+            if (providerInfo.fetchConfig && !combined.some((m) => m.value === `${alias}/fetch`)) {
+              combined.push({ id: "fetch", name: `${providerInfo.name} (Fetch)`, value: `${alias}/fetch`, kind: "webFetch" });
+            }
+            if (combined.length === 0) {
+              combined.push({ id: providerId, name: providerInfo.name, value: alias });
+            }
+          }
         }
 
         if (combined.length > 0) {
@@ -375,7 +397,7 @@ export default function ModelSelectModal({
         // Merge custom models registered via /api/models/custom for this provider.
         // Their declared kind controls typed media selectors.
         const registeredCustom = customModels
-          .filter((m) => m.providerAlias === providerId)
+          .filter((m) => m.providerAlias === providerId || m.providerAlias === nodePrefix)
           .map((m) => ({
             id: m.id,
             name: m.name || m.id,
@@ -385,7 +407,9 @@ export default function ModelSelectModal({
           }));
         const typedCustom = kindFilter && TYPED_KINDS.has(kindFilter)
           ? registeredCustom.filter((m) => getModelKind(m) === kindFilter)
-          : registeredCustom.filter((m) => !getModelKind(m) || ["llm", "imageToText"].includes(getModelKind(m)));
+          : includeAllServiceKinds
+            ? registeredCustom
+            : registeredCustom.filter((m) => !getModelKind(m) || ["llm", "imageToText"].includes(getModelKind(m)));
         const baseModels = kindFilter && TYPED_KINDS.has(kindFilter) ? [] : nodeModels;
         const seen = new Set(baseModels.map((m) => m.value));
         const mergedModels = [...baseModels, ...typedCustom.filter((m) => !seen.has(m.value))];
@@ -457,6 +481,18 @@ export default function ModelSelectModal({
           }
         }
 
+        if (includeAllServiceKinds && !kindFilter) {
+          if (providerInfo.searchConfig && !allModels.some((m) => m.value === `${alias}/search`)) {
+            allModels.push({ id: "search", name: `${providerInfo.name} (Search)`, value: `${alias}/search`, kind: "webSearch" });
+          }
+          if (providerInfo.fetchConfig && !allModels.some((m) => m.value === `${alias}/fetch`)) {
+            allModels.push({ id: "fetch", name: `${providerInfo.name} (Fetch)`, value: `${alias}/fetch`, kind: "webFetch" });
+          }
+          if (allModels.length === 0) {
+            allModels = [{ id: providerId, name: providerInfo.name, value: alias }];
+          }
+        }
+
         if (allModels.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
@@ -503,7 +539,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, includeAllServiceKinds, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);
@@ -885,4 +921,5 @@ ModelSelectModal.propTypes = {
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
   allowProviderWildcard: PropTypes.bool,
+  includeAllServiceKinds: PropTypes.bool,
 };

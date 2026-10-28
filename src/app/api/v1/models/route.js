@@ -3,6 +3,7 @@ import {
   ALIAS_TO_ID,
   AI_PROVIDERS,
   FREE_PROVIDERS,
+  FREE_TIER_PROVIDERS,
   getNodeServiceKinds,
   getProviderAlias,
   isAnthropicCompatibleProvider,
@@ -43,7 +44,16 @@ const MODEL_TYPE_TO_KIND = {
   stt: "stt",
   imageToText: "imageToText",
   video: "video",
+  music: "music",
+  systemone: "systemone",
+  webSearch: "webSearch",
+  webFetch: "webFetch",
 };
+
+export const ALL_SERVICE_KINDS = Object.freeze([
+  LLM_KIND,
+  ...Object.values(MODEL_TYPE_TO_KIND),
+]);
 
 function modelKind(model) {
   const k = model?.kind || model?.type;
@@ -58,6 +68,7 @@ function inferKindFromUnknownModelId(modelId) {
   if (/embed/.test(lower)) return "embedding";
   if (/tts|speech|audio|voice/.test(lower)) return "tts";
   if (/image|imagen|dall-?e|flux|sdxl|sd-|stable-diffusion/.test(lower)) return "image";
+  if (/(?:^|\/)jev(?:-|$)|^clef(?:-|:|$)/.test(lower)) return "systemone";
   return LLM_KIND;
 }
 
@@ -179,8 +190,8 @@ export async function buildModelsList(kindFilter) {
     }
   }
 
-  // Include no-auth free providers (e.g. opencode) so their models are exposed in /v1/models
-  for (const [id, provider] of Object.entries(FREE_PROVIDERS || {})) {
+  // Include no-auth free and free-tier providers (e.g. opencode, edge-tts) so their models are exposed in /v1/models
+  for (const [id, provider] of Object.entries({ ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS })) {
     if (provider?.noAuth && !activeConnectionByProvider.has(id)) {
       activeConnectionByProvider.set(id, {
         id: "noauth",
@@ -228,19 +239,61 @@ export async function buildModelsList(kindFilter) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
+      if (connections.length === 0) {
     // DB unavailable -> return static models, filtered by per-model kind
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
+      const providerInfo = AI_PROVIDERS[providerId];
+      if (!providerInfo || alias !== (PROVIDER_ID_TO_ALIAS[providerId] || providerId)) continue;
       if (!providerMatchesKinds(providerId, kindFilter, nodeById)) continue;
       for (const model of providerModels) {
-        if (!kindFilter.includes(modelKind(model))) continue;
+        const kind = modelKind(model);
+        if (!kindFilter.includes(kind)) continue;
         if (isDisabled(alias, model.id) || isDisabled(providerId, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
+          ...(kind !== LLM_KIND ? { kind } : {}),
           owned_by: alias,
           capabilities: getCapabilitiesForModel(alias, model.id),
+        });
+      }
+      if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
+        models.push({
+          id: `${alias}/search`,
+          object: "model",
+          kind: "webSearch",
+          owned_by: alias,
+        });
+      }
+      if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig) {
+        models.push({
+          id: `${alias}/fetch`,
+          object: "model",
+          kind: "webFetch",
+          owned_by: alias,
+        });
+      }
+    }
+
+    for (const [providerId, providerInfo] of Object.entries(AI_PROVIDERS)) {
+      const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+      if (PROVIDER_MODELS[alias]) continue;
+      if (!providerMatchesKinds(providerId, kindFilter, nodeById)) continue;
+      if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
+        models.push({
+          id: `${alias}/search`,
+          object: "model",
+          kind: "webSearch",
+          owned_by: alias,
+        });
+      }
+      if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig) {
+        models.push({
+          id: `${alias}/fetch`,
+          object: "model",
+          kind: "webFetch",
+          owned_by: alias,
         });
       }
     }
@@ -388,6 +441,7 @@ export async function buildModelsList(kindFilter) {
         const model = {
           id: `${outputAlias}/${modelId}`,
           object: "model",
+          ...(kind !== LLM_KIND ? { kind } : {}),
           owned_by: outputAlias,
         };
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
@@ -468,8 +522,8 @@ export async function OPTIONS() {
 }
 
 /**
- * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
- * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
+ * GET /v1/models - OpenAI compatible models list (includes LLM and active media models).
+ * For specific capabilities use /v1/models/{kind} (image, video, tts, stt, embedding, image-to-text, web, systemone).
  */
 export async function GET(request) {
   const endpointDenied = enforceEndpointAccess(await getKeyAccessContext(request));
@@ -477,7 +531,7 @@ export async function GET(request) {
   try {
     const data = await filterModelsListForKey(
       await getKeyAccessContext(request),
-      await buildModelsList([LLM_KIND])
+      await buildModelsList(ALL_SERVICE_KINDS)
     );
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },

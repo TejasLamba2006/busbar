@@ -161,14 +161,29 @@ describe("403 response shape", () => {
   });
 });
 
-describe("provider-as-model (search / fetch)", () => {
+describe("provider-as-model (search / fetch) and provider wildcards", () => {
   it("allows a listed provider or a listed combo, denies others", async () => {
     const ctx = await ctxFor("sk-tavily");
     expect(await engine.enforceKeyAccessProvider(ctx, "tavily", null)).toBeNull();
     expect(await engine.enforceKeyAccessProvider(ctx, "TAVILY", null)).toBeNull();
+    expect(await engine.enforceKeyAccessProvider(ctx, "tavily/search", null)).toBeNull();
     expect((await engine.enforceKeyAccessProvider(ctx, "exa", null)).status).toBe(403);
     expect(await engine.enforceKeyAccessProvider(ctx, "Main", ["tavily"])).toBeNull();
     expect((await engine.enforceKeyAccessProvider(ctx, "other", ["exa"])).status).toBe(403);
+  });
+
+  it("allows all models of a provider when provider/* wildcard or bare provider is listed, and matches TTS model/voice subpaths", async () => {
+    key("wild", { restricted: true, allow: ["el/*", "fish/s2-pro", "tavily/search"] });
+    const ctx = await ctxFor("sk-wild");
+    // Wildcard el/* grants any ElevenLabs model (STT or TTS + voice)
+    expect(await engine.enforceKeyAccessResolved(ctx, "el/scribe_v2", "elevenlabs", "scribe_v2")).toBeNull();
+    expect(await engine.enforceKeyAccess(ctx, "el/eleven_flash_v2_5/rachel")).toBeNull();
+    // Exact TTS model fish/s2-pro grants fish/s2-pro and fish/s2-pro/<voiceId>, denies fish/s1
+    expect(await engine.enforceKeyAccess(ctx, "fish/s2-pro")).toBeNull();
+    expect(await engine.enforceKeyAccess(ctx, "fish/s2-pro/voice-123")).toBeNull();
+    expect((await engine.enforceKeyAccess(ctx, "fish/s1")).status).toBe(403);
+    // tavily/search grants tavily on search endpoint
+    expect(await engine.enforceKeyAccessProvider(ctx, "tavily", null)).toBeNull();
   });
 });
 
@@ -191,6 +206,8 @@ describe("/v1/models filtering", () => {
     expect(await ids("sk-node")).toEqual(["mock/glm-4"]);
     expect(await ids("sk-tavily")).toEqual(["Main", "tavily/search"]);
     expect(await ids("sk-empty")).toEqual([]);
+    key("wild-oa", { restricted: true, allow: ["openai/*"] });
+    expect(await ids("sk-wild-oa")).toEqual(["openai/model-a", "openai/model-b"]);
   });
   it("leaves the list untouched for an unrestricted key", async () => {
     expect(await engine.filterModelsListForKey(await ctxFor("sk-open"), list)).toBe(list);

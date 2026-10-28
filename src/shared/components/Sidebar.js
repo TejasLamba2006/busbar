@@ -11,7 +11,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
 import Modal from "./Modal";
-import { WhatsNewModal, pollUntilUpdated } from "./UpdateModals";
+import { WhatsNewModal, Notes, pollUntilUpdated } from "./UpdateModals";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt", "systemone"];
@@ -360,7 +360,7 @@ export default function Sidebar({ onClose }) {
         <p className="text-sm text-text-muted">
           {`v${updateInfo?.currentVersion || ""} → v${updateInfo?.latestVersion || ""}. Install automatically and restart, or show the manual CLI command.`}
         </p>
-        {releaseNotes && <pre className="text-xs whitespace-pre-wrap break-words max-h-64 overflow-auto p-3 mt-2 rounded-lg bg-bg border border-border">{releaseNotes}</pre>}
+        {releaseNotes && <div className="mt-2"><Notes text={releaseNotes} /></div>}
         {updateError && <p className="text-sm text-red-500 mt-2 break-all">{updateError}</p>}
       </Modal>
 

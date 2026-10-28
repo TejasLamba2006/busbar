@@ -123,25 +123,53 @@ export function enforceEndpointAccess(ctx, endpointOrRequest) {
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
-// and resolved provider ids (for provider-as-model kinds).
+// and resolved provider ids (for provider-as-model kinds and provider/* wildcards).
 async function getAllowSets(ctx) {
   if (ctx._sets) return ctx._sets;
   const comboNames = new Set((await getCombos()).map((c) => lower(c.name)));
   const combos = new Set();
   const models = new Set();
   const providers = new Set();
+  const wildcardProviders = new Set();
   for (const entry of ctx.allow) {
     const key = lower(entry);
     if (comboNames.has(key)) {
       combos.add(key);
       continue;
     }
+    if (!entry.includes("/")) {
+      const resolvedId = lower(resolveProviderId(entry));
+      providers.add(resolvedId);
+      const info = await getModelInfo(entry);
+      if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
+      continue;
+    }
     const info = await getModelInfo(entry);
+    if (info?.provider && info.model === "*") {
+      wildcardProviders.add(lower(info.provider));
+      providers.add(lower(info.provider));
+      continue;
+    }
+    if (info?.provider && (info.model === "search" || info.model === "fetch")) {
+      providers.add(lower(info.provider));
+    }
     if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
-    if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
   }
-  ctx._sets = { combos, models, providers };
+  ctx._sets = { combos, models, providers, wildcardProviders };
   return ctx._sets;
+}
+
+function matchesAllowedModel(sets, provider, model) {
+  if (!provider || !model) return false;
+  const p = lower(provider);
+  if (sets.wildcardProviders.has(p) || sets.providers.has(p)) return true;
+  if (sets.models.has(canonicalModel(provider, model))) return true;
+  // TTS requests often send "provider/tts-model/voice" while the allow list stores "provider/tts-model"
+  if (typeof model === "string" && model.includes("/")) {
+    const baseModel = model.slice(0, model.indexOf("/"));
+    if (sets.models.has(canonicalModel(provider, baseModel))) return true;
+  }
+  return false;
 }
 
 async function isModelStringAllowed(ctx, requested) {
@@ -149,7 +177,7 @@ async function isModelStringAllowed(ctx, requested) {
   const info = await getModelInfo(requested);
   // provider null ⇔ an existing combo with no members (routes nowhere).
   if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+  return matchesAllowedModel(sets, info.provider, info.model);
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -190,7 +218,7 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  return matchesAllowedModel(sets, provider, model) ? null : keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -204,9 +232,15 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx.modelRestricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
+  let resolvedProvider = requested;
+  if (requested.includes("/")) {
+    const info = await getModelInfo(requested);
+    if (info?.provider) resolvedProvider = info.provider;
+  }
+  const p = lower(resolveProviderId(resolvedProvider));
   const allowed = comboModels
     ? sets.combos.has(lower(requested))
-    : sets.providers.has(lower(resolveProviderId(requested)));
+    : (sets.providers.has(p) || sets.wildcardProviders.has(p));
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
 
@@ -241,10 +275,13 @@ export async function filterModelsListForKey(ctx, list) {
     const info = await getModelInfo(entry.id);
     if (!info?.provider) continue;
     if (KEY_ACCESS_PROVIDER_AS_MODEL_KINDS.includes(entry.kind)) {
-      if (sets.providers.has(lower(info.provider))) out.push(entry);
+      const p = lower(info.provider);
+      if (sets.providers.has(p) || sets.wildcardProviders.has(p) || sets.models.has(canonicalModel(info.provider, info.model))) {
+        out.push(entry);
+      }
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    if (matchesAllowedModel(sets, info.provider, info.model)) out.push(entry);
   }
   return out;
 }

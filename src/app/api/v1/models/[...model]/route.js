@@ -10,9 +10,23 @@ const KIND_SLUG_MAP = {
   "embedding": ["embedding"],
   "image-to-text": ["imageToText"],
   "web": ["webSearch", "webFetch"],
+  "systemone": ["systemone"],
+  "music": ["music"],
 };
 
-const LLM_KIND = "llm";
+const ALL_LOOKUP_KINDS = [
+  "llm",
+  "image",
+  "video",
+  "tts",
+  "stt",
+  "embedding",
+  "imageToText",
+  "webSearch",
+  "webFetch",
+  "systemone",
+  "music",
+];
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -54,10 +68,13 @@ export async function GET(request, { params }) {
       return json({ object: "list", data });
     }
 
-    // Match the same LLM catalog exposed by GET /v1/models. A catch-all
-    // parameter is required because provider-prefixed IDs contain a slash.
-    const models = await filterModelsListForKey(keyAccess, await buildModelsList([LLM_KIND]));
-    const matchedModel = models.find((candidate) => candidate.id === identifier);
+    // Match the catalog exposed by GET /v1/models (first check LLM, then fall back to media kinds).
+    const models = await filterModelsListForKey(keyAccess, await buildModelsList(["llm"]));
+    let matchedModel = models.find((candidate) => candidate.id === identifier);
+    if (!matchedModel) {
+      const mediaModels = await filterModelsListForKey(keyAccess, await buildModelsList(ALL_LOOKUP_KINDS));
+      matchedModel = (mediaModels || []).find((candidate) => candidate.id === identifier);
+    }
 
     if (!matchedModel) {
       return json(

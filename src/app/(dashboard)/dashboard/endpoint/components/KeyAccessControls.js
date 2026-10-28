@@ -98,11 +98,25 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict,
           onClose={() => setPickerOpen(false)}
           onSelect={add}
           onDeselect={(model) => remove(access.allow.find((e) => e.toLowerCase() === String(model?.value).toLowerCase()))}
+          onSelectBatch={(models) => {
+            const next = [...access.allow];
+            for (const m of models) {
+              const v = m?.value;
+              if (v && !next.some((e) => e.toLowerCase() === v.toLowerCase())) next.push(v);
+            }
+            setAllow(next);
+          }}
+          onDeselectBatch={(models) => {
+            const drop = new Set(models.map((m) => String(m?.value || "").toLowerCase()));
+            setAllow(access.allow.filter((e) => !drop.has(e.toLowerCase())));
+          }}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
           title={`Allowed for "${apiKey.name}"`}
           addedModelValues={access.allow}
           closeOnSelect={false}
+          allowProviderWildcard={true}
+          includeAllServiceKinds={true}
         />
       )}
     </div>

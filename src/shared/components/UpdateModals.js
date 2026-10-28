@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
+import { marked } from "marked";
 import Button from "./Button";
 import Modal from "./Modal";
 
@@ -24,9 +25,19 @@ export async function pollUntilUpdated(target, tries = 45) {
   return { ok: false, error: "Server did not come back in time. Reload manually." };
 }
 
-function Notes({ text }) {
+export function Notes({ text }) {
+  const html = useMemo(() => {
+    if (!text) return "";
+    marked.setOptions({ gfm: true, breaks: true });
+    return marked.parse(text);
+  }, [text]);
   if (!text) return <p className="text-sm text-text-muted">No release notes published.</p>;
-  return <pre className="text-xs whitespace-pre-wrap break-words max-h-64 overflow-auto p-3 rounded-lg bg-bg border border-border">{text}</pre>;
+  return (
+    <div
+      className="changelog-body text-xs leading-relaxed break-words max-h-64 overflow-auto p-3 rounded-lg bg-bg border border-border text-text-main"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }
 Notes.propTypes = { text: PropTypes.string };
 
