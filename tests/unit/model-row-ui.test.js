@@ -8,6 +8,7 @@ const rowSource = fs.readFileSync(path.join(root, "src/app/(dashboard)/dashboard
 const providerDir = path.join(root, "src/app/(dashboard)/dashboard/providers/[id]");
 const pageSource = fs.readFileSync(path.join(providerDir, "page.js"), "utf8");
 const compatibleSource = fs.readFileSync(path.join(providerDir, "CompatibleModelsSection.js"), "utf8");
+const modelsCardSource = fs.readFileSync(path.join(root, "src/app/(dashboard)/dashboard/providers/components/ModelsCard.js"), "utf8");
 const hookSource = fs.readFileSync(path.join(providerDir, "useModelPricing.js"), "utf8");
 
 describe("OmniRoute-style model rows", () => {
@@ -53,13 +54,14 @@ describe("OmniRoute-style model rows", () => {
     expect(hookSource).toContain("/api/pricing?provider=${encodeURIComponent(resolvedProviderId)}&${qs}");
     expect(hookSource).toContain(`method: "PATCH"`);
     expect(hookSource).toContain(`method: "DELETE"`);
-    for (const source of [pageSource, compatibleSource]) {
+    for (const source of [pageSource, compatibleSource, modelsCardSource]) {
       expect(source).toContain("useModelPricing(");
       expect(source).toContain("onSavePricing=");
       expect(source).toContain("onResetPricing=");
     }
     expect(pageSource).toContain("useModelPricing(isCompatible ? null : providerId,");
     expect(compatibleSource).toContain("useModelPricing(providerStorageAlias,");
+    expect(modelsCardSource).toContain("useModelPricing(providerId,");
   });
 
   it("keeps the test button visible and exposes disabled reasons", () => {

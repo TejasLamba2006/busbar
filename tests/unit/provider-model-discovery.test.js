@@ -36,6 +36,8 @@ describe("provider model discovery metadata", () => {
     expect(showsModelCatalog(AI_PROVIDERS.exa)).toBe(false);
     expect(showsModelCatalog(AI_PROVIDERS.firecrawl)).toBe(false);
     expect(showsModelCatalog(AI_PROVIDERS.claude)).toBe(true);
+    expect(showsModelCatalog(AI_PROVIDERS.elevenlabs)).toBe(true);
+    expect(showsModelCatalog(AI_PROVIDERS.typesafe)).toBe(true);
     expect(showsModelRefresh(AI_PROVIDERS.vertex, true)).toBe(true);
     expect(showsModelRefresh(AI_PROVIDERS.vertex, false)).toBe(false);
     expect(showsModelRefresh(AI_PROVIDERS["cloudflare-ai"], true)).toBe(false);

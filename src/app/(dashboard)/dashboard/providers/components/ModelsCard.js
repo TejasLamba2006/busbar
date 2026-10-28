@@ -7,15 +7,35 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useNotificationStore } from "@/store/notificationStore";
+import { getModelPricingPresentation, parsePricingInput } from "@/shared/utils/modelRowPresentation.js";
+import useModelPricing from "@/app/(dashboard)/dashboard/providers/[id]/useModelPricing";
 
 // ── ModelRow ───────────────────────────────────────────────────
-export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
+export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, pricing, onSavePricing, onResetPricing }) {
   const borderColor = testStatus === "ok" ? "border-green-500/40" : testStatus === "error" ? "border-red-500/40" : "border-border";
   const iconColor = testStatus === "ok" ? "#22c55e" : testStatus === "error" ? "#ef4444" : undefined;
+  const price = getModelPricingPresentation(pricing);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceDraft, setPriceDraft] = useState({ input: "", output: "" });
+  const [savingPrice, setSavingPrice] = useState(false);
+  const priceRates = parsePricingInput(priceDraft);
+
+  const savePrice = async () => {
+    if (!priceRates || !onSavePricing) return;
+    setSavingPrice(true);
+    try {
+      await onSavePricing(priceRates);
+      setEditingPrice(false);
+    } catch (error) {
+      alert(error.message || "Failed to save price");
+    } finally {
+      setSavingPrice(false);
+    }
+  };
 
   return (
     <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="material-symbols-outlined text-base" style={iconColor ? { color: iconColor } : undefined}>
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
@@ -43,6 +63,54 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
+        {onSavePricing && (editingPrice ? (
+          <span className="flex items-center gap-1 text-[10px] text-text-muted">
+            <label className="flex items-center gap-0.5">
+              In $
+              <input
+                type="number" min="0" step="any" inputMode="decimal"
+                aria-label={`Input price for ${model.id} in dollars per 1M tokens`}
+                value={priceDraft.input}
+                onChange={(event) => setPriceDraft((d) => ({ ...d, input: event.target.value }))}
+                className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-text-main"
+              />
+            </label>
+            <label className="flex items-center gap-0.5">
+              Out $
+              <input
+                type="number" min="0" step="any" inputMode="decimal"
+                aria-label={`Output price for ${model.id} in dollars per 1M tokens`}
+                value={priceDraft.output}
+                onChange={(event) => setPriceDraft((d) => ({ ...d, output: event.target.value }))}
+                onKeyDown={(event) => { if (event.key === "Enter") savePrice(); if (event.key === "Escape") setEditingPrice(false); }}
+                className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-text-main"
+              />
+            </label>
+            <span>$ / 1M tokens</span>
+            <button type="button" onClick={savePrice} disabled={!priceRates || savingPrice} title="Save price" className="rounded p-0.5 hover:text-primary disabled:opacity-40">
+              <span className="material-symbols-outlined text-sm">check</span>
+            </button>
+            <button type="button" onClick={() => setEditingPrice(false)} title="Cancel" className="rounded p-0.5 hover:text-primary">
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-[10px] text-text-muted">
+            <button
+              type="button"
+              onClick={() => { setPriceDraft({ input: price.input, output: price.output }); setEditingPrice(true); }}
+              title="Edit price ($ / 1M tokens)"
+              className="rounded px-1 hover:text-primary"
+            >
+              {price.label}
+            </button>
+            {price.canReset && onResetPricing && (
+              <button type="button" onClick={onResetPricing} title="Reset to default price" className="rounded p-0.5 hover:text-primary">
+                <span className="material-symbols-outlined text-sm">restart_alt</span>
+              </button>
+            )}
+          </span>
+        ))}
         {isFree && <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">FREE</span>}
         {isCustom && (
           <button onClick={onDeleteAlias} className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" title="Remove custom model">
@@ -65,6 +133,9 @@ ModelRow.propTypes = {
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
+  pricing: PropTypes.shape({ rates: PropTypes.object, source: PropTypes.string }),
+  onSavePricing: PropTypes.func,
+  onResetPricing: PropTypes.func,
 };
 
 // ── AddCustomModelModal ────────────────────────────────────────
@@ -227,6 +298,8 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   );
 
   const displayModels = builtInModels;
+  const pricedModelIds = [...new Set([...displayModels.map((m) => m.id), ...myCustomModels.map((m) => m.id)])];
+  const modelPricing = useModelPricing(providerId, pricedModelIds);
 
   return (
     <>
@@ -254,6 +327,9 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
                 onTest={() => handleTestModel(model.id)}
                 isTesting={testingModelId === model.id}
                 isFree={model.isFree}
+                pricing={modelPricing.pricing[model.id]}
+                onSavePricing={(rates) => modelPricing.save(model.id, rates)}
+                onResetPricing={() => modelPricing.reset(model.id).catch((error) => alert(error.message))}
               />
             );
           })}
@@ -271,6 +347,9 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
               onTest={() => handleTestModel(model.id)}
               isTesting={testingModelId === model.id}
               isCustom
+              pricing={modelPricing.pricing[model.id]}
+              onSavePricing={(rates) => modelPricing.save(model.id, rates)}
+              onResetPricing={() => modelPricing.reset(model.id).catch((error) => alert(error.message))}
             />
           ))}
 

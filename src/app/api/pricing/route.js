@@ -1,16 +1,40 @@
 import { NextResponse } from "next/server";
 import { getManualPricing, getPricingForModelWithSource, getPricingForModelsWithSource, updatePricing, resetPricing, resetAllPricing } from "@/lib/localDb.js";
-import { PROVIDER_PRICING, getDefaultPricing } from "open-sse/providers/pricing.js";
+import { PROVIDER_PRICING, getDefaultPricing, getPricingForModel } from "open-sse/providers/pricing.js";
 import { getCatalogRevision, getCatalogSnapshot } from "open-sse/providers/catalogOverride.js";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { buildPricingView } from "@/lib/pricingView.js";
 
 const MAX_MODEL_BATCH = 1000;
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const ALIAS_TO_PROVIDER_ID = Object.fromEntries(
+  Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
+);
+
+function buildRegistryPricingDefaults() {
+  const defaults = {};
+  for (const [p, models] of Object.entries(PROVIDER_PRICING)) {
+    defaults[p] = { ...models };
+  }
+  for (const [key, models] of Object.entries(PROVIDER_MODELS)) {
+    if (!Array.isArray(models) || key.endsWith("-tts-models") || key.endsWith("-tts-voices")) continue;
+    const providerId = ALIAS_TO_PROVIDER_ID[key] || key;
+    if (key !== (PROVIDER_ID_TO_ALIAS[providerId] || providerId) && key !== providerId) continue;
+    for (const m of models) {
+      if (!m?.id || defaults[providerId]?.[m.id]) continue;
+      const rates = getPricingForModel(providerId, m.id);
+      if (rates) {
+        (defaults[providerId] ||= {})[m.id] = rates;
+      }
+    }
+  }
+  return defaults;
+}
 
 async function getPricingView() {
   const manual = await getManualPricing();
   const catalog = getCatalogSnapshot();
-  const view = buildPricingView({ hardcoded: PROVIDER_PRICING, manual, catalog });
+  const view = buildPricingView({ hardcoded: buildRegistryPricingDefaults(), manual, catalog });
   return { ...view, catalog: getCatalogRevision() };
 }
 

@@ -272,9 +272,10 @@ export default function ProviderDetailPage() {
     }
   }, [providerStorageAlias]);
 
+  const hasLlmService = (providerInfo?.serviceKinds ?? ["llm"]).includes("llm");
   const modelBatch = useModelBatchTest({ providerId, connections, onVisibilityChanged: fetchDisabledModels, noAuth: isFreeNoAuth });
   const pricedModelIds = [...new Set([
-    ...getProviderCustomModelRows({ customModels, modelAliases, providerAlias: providerStorageAlias, builtInModels: models, type: "llm" }).map((m) => m.id),
+    ...getProviderCustomModelRows({ customModels, modelAliases, providerAlias: providerStorageAlias, builtInModels: models, type: hasLlmService ? "llm" : null }).map((m) => m.id),
     ...models.map((m) => m.id),
     ...kiloFreeModels.map((m) => m.id),
   ])];
@@ -1208,19 +1209,22 @@ export default function ProviderDetailPage() {
         />
       );
     }
+    const hasLlmKind = (providerInfo?.serviceKinds ?? ["llm"]).includes("llm");
+    const defaultModelType = hasLlmKind ? "llm" : (providerInfo?.serviceKinds?.[0] || "llm");
     // Combine hardcoded models with Kilo free models (deduplicated)
-    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
+    // For LLM providers, exclude non-llm models (embedding, tts, etc.) since they have dedicated pages under media-providers.
+    // For media-only providers (e.g. elevenlabs, fish-audio, typesafe), show their media models directly.
     const allModels = [
       ...models,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
+    ].filter((m) => { const k = getModelKind(m); return !hasLlmKind || !k || k === "llm"; });
     const disabledSet = new Set(disabledModelIds);
     const customModelRows = getProviderCustomModelRows({
       customModels,
       modelAliases,
       providerAlias: providerStorageAlias,
       builtInModels: models,
-      type: "llm",
+      type: hasLlmKind ? "llm" : null,
     });
     const providerIsFreeTier = Boolean(FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);
     const rows = [
@@ -1272,7 +1276,7 @@ export default function ProviderDetailPage() {
                 onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
                 onCopy={copy}
                 onDeleteAlias={() => {
-                  if (model.source === "custom") handleDeleteCustomModel(model.id, "llm", providerStorageAlias);
+                  if (model.source === "custom") handleDeleteCustomModel(model.id, model.type || defaultModelType, providerStorageAlias);
                   else handleDeleteAlias(model.alias);
                 }}
                 testStatus={modelBatch.results[model.id]?.ok === true ? "ok" : modelBatch.results[model.id] ? "error" : undefined}
@@ -1864,7 +1868,7 @@ export default function ProviderDetailPage() {
             const allIds = [
               ...models,
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
+            ].filter((m) => { const k = getModelKind(m); return !hasLlmService || !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
@@ -1985,7 +1989,8 @@ export default function ProviderDetailPage() {
           onSave={async (modelId, caps, transport) => {
             // caps.stt is a UI-only flag; the API accepts transports only on
             // type "stt" records, so the save derives the type from it.
-            await handleAddCustomModel(modelId, caps?.stt ? "stt" : "llm", providerStorageAlias, caps, transport);
+            const fallbackType = hasLlmService ? "llm" : (providerInfo?.serviceKinds?.[0] || "llm");
+            await handleAddCustomModel(modelId, caps?.stt ? "stt" : fallbackType, providerStorageAlias, caps, transport);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}

@@ -46,7 +46,7 @@ export default function CompatibleModelsSection({
     customModels,
     modelAliases,
     providerAlias: providerStorageAlias,
-    type: "llm",
+    type: null,
   });
   const modelPricing = useModelPricing(providerStorageAlias, allModels.map((model) => model.id));
   const disabledSet = new Set(disabledModelIds);

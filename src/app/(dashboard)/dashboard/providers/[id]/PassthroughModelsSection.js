@@ -95,7 +95,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
     customModels,
     modelAliases,
     providerAlias,
-    type: "llm",
+    type: null,
   });
 
   const handleAdd = async () => {
