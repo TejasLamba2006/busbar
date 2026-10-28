@@ -37,13 +37,20 @@ function getRuntimePackageJson(dir = getRuntimeDir()) {
   return pkgJson;
 }
 
-function importFromRuntimeDir(pkg, dir = getRuntimeDir()) {
+function unwrapModule(mod) {
+  if (mod && typeof mod === "object" && mod.default && typeof mod.default === "object") {
+    return { ...mod.default, ...mod };
+  }
+  return mod;
+}
+
+async function importFromRuntimeDir(pkg, dir = getRuntimeDir()) {
   const pkgJson = getRuntimePackageJson(dir);
   // Use Module.createRequire rather than bare createRequire() so webpack does
   // not replace the call with `(void 0)` when bundling server chunks.
   const req = Module.createRequire(pkgJson);
   const resolved = req.resolve(pkg);
-  return import(/* webpackIgnore: true */ pathToFileURL(resolved).href);
+  return unwrapModule(await import(/* webpackIgnore: true */ pathToFileURL(resolved).href));
 }
 
 function isModuleMissing(error) {
@@ -72,7 +79,7 @@ const inflight = new Map();
 async function load(pkg) {
   // 1) Resolvable from the app install (dev machine / traced standalone).
   try {
-    return await import(/* webpackIgnore: true */ pkg);
+    return unwrapModule(await import(/* webpackIgnore: true */ pkg));
   } catch (error) {
     if (!isModuleMissing(error)) throw error;
   }

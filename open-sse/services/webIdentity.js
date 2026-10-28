@@ -209,10 +209,22 @@ const PROBES = {
   },
 
   async "qwen-web"(credential) {
-    let token = String(credential || "").trim();
+    let raw = String(credential || "").trim();
+    if (!raw) return REJECTED("Missing Qwen token");
+
+    if (!raw.includes(";") && /^[^\s@:|]+@[^\s@:|]+\.[^\s@:|]+[:|].+$/.test(raw)) {
+      const sepIdx = raw.search(/[:|]/);
+      const email = raw.slice(0, sepIdx).trim();
+      return OK(email);
+    }
+
+    let token = raw;
     if (token.startsWith("{")) {
       try {
         const parsed = JSON.parse(token);
+        if (typeof parsed?.email === "string" && typeof parsed?.password === "string") {
+          return OK(parsed.email.trim());
+        }
         if (typeof parsed?.token === "string") token = parsed.token.trim();
         else if (typeof parsed?.value === "string") token = parsed.value.trim();
       } catch { /* ignore */ }
@@ -220,9 +232,15 @@ const PROBES = {
       const jar = cookieJar(token);
       token = jar.get("token") || jar.get("qwen_token") || "";
     }
-    if (!token) return REJECTED("Missing Qwen token");
+    if (!token) {
+      return REJECTED(
+        raw.includes("=")
+          ? "Browser cookies do not contain Qwen's JWT token — paste localStorage.getItem('token') (starts with eyJ...) or email:password"
+          : "Missing Qwen token"
+      );
+    }
     const payload = decodeJwtPayload(token);
-    if (!payload) return REJECTED("Invalid Qwen JWT token");
+    if (!payload) return REJECTED("Invalid Qwen JWT token — paste localStorage.getItem('token') (starts with eyJ...) or email:password");
     if (payload.exp && Number(payload.exp) * 1000 < Date.now()) {
       return REJECTED("Qwen token has expired");
     }

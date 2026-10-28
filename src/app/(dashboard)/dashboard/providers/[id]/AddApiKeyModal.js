@@ -14,10 +14,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
   const credentialLabel = isCookie
-    ? (provider === "qwen-web" || provider === "deepseek-web" ? "Session Token / Cookie" : "Cookie Value")
+    ? (provider === "qwen-web" ? "JWT Token (localStorage.token) or email:password" : provider === "deepseek-web" ? "Session Token / Cookie" : "Cookie Value")
     : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
-    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
+    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : provider === "qwen-web" ? "eyJhbGciOi... (or email@example.com:password)" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
 
   const isAzure = provider === "azure";
@@ -56,6 +56,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [validationError, setValidationError] = useState(null);
   const [saving, setSaving] = useState(false);
   const bulkPlaceholder = isCloudflareAi
     ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
@@ -111,6 +112,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const handleValidate = async () => {
     setValidating(true);
+    setValidationError(null);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
@@ -119,6 +121,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
+      setValidationError(data.valid ? null : (data.error || null));
     } catch {
       setValidationResult("failed");
     } finally {
@@ -141,6 +144,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       try {
         setValidating(true);
         setValidationResult(null);
+        setValidationError(null);
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -149,6 +153,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const data = await res.json();
         isValid = !!data.valid;
         setValidationResult(isValid ? "success" : "failed");
+        setValidationError(isValid ? null : (data.error || null));
       } catch {
         setValidationResult("failed");
       } finally {
@@ -345,9 +350,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           </p>
         )}
         {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
+          <div className="flex flex-col gap-1">
+            <Badge variant={validationResult === "success" ? "success" : "error"}>
+              {validationResult === "success" ? "Valid" : "Invalid"}
+            </Badge>
+            {validationError && (
+              <p className="text-xs text-red-500 break-words">{validationError}</p>
+            )}
+          </div>
         )}
         {error && (
           <p className="text-xs text-red-500 break-words">{error}</p>

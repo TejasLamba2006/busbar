@@ -28,8 +28,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testError, setTestError] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [validationError, setValidationError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [blockExtraUsage, setBlockExtraUsage] = useState(true);
 
@@ -70,7 +72,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setBlockExtraUsage(connection.providerSpecificData?.blockExtraUsage !== false);
       setTestResult(null);
+      setTestError(null);
       setValidationResult(null);
+      setValidationError(null);
     }
   }, [connection, isOpen]);
 
@@ -102,10 +106,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     if (!connection?.provider) return;
     setTesting(true);
     setTestResult(null);
+    setTestError(null);
     try {
       const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
       const data = await res.json();
       setTestResult(data.valid ? "success" : "failed");
+      setTestError(data.valid ? null : (data.error || null));
     } catch {
       setTestResult("failed");
     } finally {
@@ -117,6 +123,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     if (!connection?.provider || !formData.apiKey) return;
     setValidating(true);
     setValidationResult(null);
+    setValidationError(null);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
@@ -132,6 +139,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
+      setValidationError(data.valid ? null : (data.error || null));
     } catch {
       setValidationResult("failed");
     } finally {
@@ -266,9 +274,14 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </div>
             </div>
             {validationResult && (
-              <Badge variant={validationResult === "success" ? "success" : "error"}>
-                {validationResult === "success" ? "Valid" : "Invalid"}
-              </Badge>
+              <div className="flex flex-col gap-1">
+                <Badge variant={validationResult === "success" ? "success" : "error"}>
+                  {validationResult === "success" ? "Valid" : "Invalid"}
+                </Badge>
+                {validationError && (
+                  <p className="text-xs text-red-500 break-words">{validationError}</p>
+                )}
+              </div>
             )}
           </>
         )}
@@ -366,14 +379,19 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         {!isCompatible && !isAzure && !isCloudflareAi && (
-          <div className="flex items-center gap-3">
-            <Button onClick={handleTest} variant="secondary" disabled={testing}>
-              {testing ? "Testing..." : "Test Connection"}
-            </Button>
-            {testResult && (
-              <Badge variant={testResult === "success" ? "success" : "error"}>
-                {testResult === "success" ? "Valid" : "Failed"}
-              </Badge>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <Button onClick={handleTest} variant="secondary" disabled={testing}>
+                {testing ? "Testing..." : "Test Connection"}
+              </Button>
+              {testResult && (
+                <Badge variant={testResult === "success" ? "success" : "error"}>
+                  {testResult === "success" ? "Valid" : "Failed"}
+                </Badge>
+              )}
+            </div>
+            {testError && (
+              <p className="text-xs text-red-500 break-words">{testError}</p>
             )}
           </div>
         )}

@@ -19,7 +19,7 @@ export default {
   },
   category: "webCookie",
   authType: "cookie",
-  authHint: "Use Login via Browser, or paste your JWT token from chat.qwen.ai localStorage (DevTools → Application → Local Storage → token)",
+  authHint: "Paste your JWT token from chat.qwen.ai localStorage (DevTools → Console → copy(localStorage.getItem('token')), starts with eyJ...), or enter email:password",
   modelDiscovery: "refresh",
   transport: {
     baseUrl: "https://chat.qwen.ai/api/v2/chat/completions",
