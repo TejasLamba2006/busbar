@@ -255,13 +255,46 @@ function normalizeLooseJson(value) {
     .replace(/,\s*([}\]])/g, "$1");
 }
 
+// Models (notably Qwen) often drop the final closing brace(s) of a tool-call object, e.g.
+// {"name":"X","arguments":{"a":1}}  ->  {"name":"X","arguments":{"a":1}
+// Append whatever closers are still open. Last-resort only: never runs for valid JSON.
+function closeUnbalancedJson(value) {
+  const stack = [];
+  let quote = "";
+  let escaped = false;
+  for (const ch of value) {
+    if (escaped) { escaped = false; continue; }
+    if (quote) {
+      if (ch === "\\") escaped = true;
+      else if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === '"') quote = ch;
+    else if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if ((ch === "}" || ch === "]") && stack.length) stack.pop();
+  }
+  if (!stack.length && !quote) return null;
+  return value + (quote || "") + stack.reverse().join("");
+}
+
 export function parseLooseJsonObject(raw) {
   const trimmed = stripCodeFence(raw);
-  for (const candidate of [trimmed, normalizeLooseJson(trimmed)]) {
+  const forms = [trimmed, normalizeLooseJson(trimmed)];
+  for (const candidate of forms) {
     try {
       return toRecord(JSON.parse(candidate));
     } catch {
       // Try the next, more permissive form.
+    }
+  }
+  for (const candidate of forms) {
+    const closed = closeUnbalancedJson(candidate);
+    if (!closed) continue;
+    try {
+      return toRecord(JSON.parse(closed));
+    } catch {
+      // give up on this form
     }
   }
   return null;

@@ -8,6 +8,7 @@ import {
   serializeDeepSeekToolPrompt,
   parseDeepSeekToolCalls,
   buildToolConversationPrompt,
+  hasMalformedDeepSeekToolIntent,
 } from "../translator/deepseekWebTools.js";
 
 export const QWEN_WEB_BASE = "https://chat.qwen.ai";
@@ -346,7 +347,7 @@ export class QwenWebExecutor extends BaseExecutor {
       ? [{ role: "system", content: toolSystemPrompt }, ...messages]
       : messages;
 
-    const prompt = hasTools
+    let prompt = hasTools
       ? buildToolConversationPrompt(messages, toolSystemPrompt)
       : flattenMessagesToPrompt(promptMessages);
 
@@ -653,7 +654,7 @@ export class QwenWebExecutor extends BaseExecutor {
     try {
       // Tool calls or non-streaming: buffer full response so tool XML can be parsed
       if (!stream || hasTools) {
-        const result = await runWithRefresh(null);
+        let result = await runWithRefresh(null);
         if (!result?.ok) {
           return {
             response: errorResponse(result?.status || 502, result?.error || "Qwen Web request failed", result?.code),
@@ -663,11 +664,27 @@ export class QwenWebExecutor extends BaseExecutor {
           };
         }
 
-        const parsedTools = hasTools ? parseDeepSeekToolCalls(result.content || "") : null;
+        const callIdSeed = `call-${Date.now()}`;
+        let parsedTools = hasTools ? parseDeepSeekToolCalls(result.content || "", callIdSeed, requestedTools) : null;
+        // A reply that clearly tried to call a tool but failed the nonce/schema/shape checks is
+        // retried once with an explicit reminder, instead of leaking raw <tool> text to the client.
+        if (hasTools && !parsedTools.toolCalls?.length && hasMalformedDeepSeekToolIntent(parsedTools.content, requestedTools)) {
+          log?.warn?.("QWEN-WEB", "Malformed tool envelope, retrying once");
+          prompt = [
+            prompt,
+            "Your previous response used an invalid tool envelope and was rejected.",
+            "Retry the requested next action from scratch. Follow the tool contract exactly, including the _nonce binding and argument schema. Emit one <tool>{...}</tool> block per call with complete, balanced JSON.",
+          ].join("\n\n");
+          const retry = await runWithRefresh(null);
+          if (retry?.ok) {
+            result = retry;
+            parsedTools = parseDeepSeekToolCalls(result.content || "", callIdSeed, requestedTools);
+          }
+        }
         const hasToolCalls = Array.isArray(parsedTools?.toolCalls) && parsedTools.toolCalls.length > 0;
         const message = {
           role: "assistant",
-          content: hasToolCalls ? (parsedTools.cleanedText || null) : (result.content || ""),
+          content: hasToolCalls ? (parsedTools.content?.trim() || null) : (hasTools ? parsedTools.content : (result.content || "")),
           ...(result.reasoning ? { reasoning_content: result.reasoning } : {}),
           ...(hasToolCalls ? { tool_calls: parsedTools.toolCalls } : {}),
         };
@@ -717,7 +734,7 @@ export class QwenWebExecutor extends BaseExecutor {
             if (hasToolCalls) {
               controller.enqueue(encoder.encode(sseChunk({
                 id: cid, object: "chat.completion.chunk", created, model: clientModel,
-                choices: [{ index: 0, delta: { tool_calls: parsedTools.toolCalls }, finish_reason: null }],
+                choices: [{ index: 0, delta: { tool_calls: parsedTools.toolCalls.map((tc, i) => ({ index: i, id: tc.id, type: "function", function: { name: tc.function.name, arguments: tc.function.arguments } })) }, finish_reason: null }],
               })));
             }
             controller.enqueue(encoder.encode(sseChunk({
