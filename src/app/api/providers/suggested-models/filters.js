@@ -57,4 +57,13 @@ export const FILTERS = {
       .sort((a, b) => String(a.id).localeCompare(String(b.id))),
 
   "nous-free": normalizeNousFreeModels,
+
+  openai: (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => typeof (m?.id || m?.name) === "string")
+      .map((m) => ({
+        id: m.id || m.name,
+        name: m.name || m.id,
+        ...(Number.isFinite(Number(m?.context_length)) ? { contextLength: Number(m.context_length) } : {}),
+      })),
 };

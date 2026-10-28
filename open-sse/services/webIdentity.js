@@ -208,6 +208,44 @@ const PROBES = {
     return OK(email.includes("@") ? email : "");
   },
 
+  async "qwen-web"(credential) {
+    let token = String(credential || "").trim();
+    if (token.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(token);
+        if (typeof parsed?.token === "string") token = parsed.token.trim();
+        else if (typeof parsed?.value === "string") token = parsed.value.trim();
+      } catch { /* ignore */ }
+    } else if (token.includes("=")) {
+      const jar = cookieJar(token);
+      token = jar.get("token") || jar.get("qwen_token") || "";
+    }
+    if (!token) return REJECTED("Missing Qwen token");
+    const payload = decodeJwtPayload(token);
+    if (!payload) return REJECTED("Invalid Qwen JWT token");
+    if (payload.exp && Number(payload.exp) * 1000 < Date.now()) {
+      return REJECTED("Qwen token has expired");
+    }
+
+    const res = await request("https://chat.qwen.ai/api/v2/auths/", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        Origin: "https://chat.qwen.ai",
+        Referer: "https://chat.qwen.ai/",
+        source: "web",
+        Version: "0.3.26",
+      },
+    });
+    if (!res.status) return UNKNOWN(res.error);
+    if (res.status === 401 || res.status === 403) return REJECTED("Qwen token is invalid or expired");
+    if (!res.ok) return UNKNOWN(`Qwen returned HTTP ${res.status}`);
+    let json = null;
+    try { json = JSON.parse(res.text); } catch { return OK(payload.email || ""); }
+    if (json?.success === false) return REJECTED(json?.data?.details || "Qwen rejected the token");
+    const email = json?.data?.email || json?.email || payload.email || "";
+    return OK(email);
+  },
 
 };
 

@@ -12,24 +12,24 @@ export default {
     textIcon: "FM",
     website: "https://freemodel.dev",
     notice: {
-      text: "$300 free credits on signup, no credit card required. Access GPT-5.4 and GPT-5.5 (OpenAI's latest flagship models) through an OpenAI-compatible API.",
+      text: "OpenAI-compatible API gateway (gpt-6-luna, gpt-6-sol, gpt-6-astra). Requires active account balance on freemodel.dev.",
       apiKeyUrl: "https://freemodel.dev"
     }
   },
-  category: "freeTier",
+  category: "apikey",
   authType: "apikey",
   authModes: [
     "apikey"
   ],
+  modelDiscovery: "refresh",
   transport: {
     baseUrl: "https://api.freemodel.dev/v1/chat/completions",
     validateUrl: "https://api.freemodel.dev/v1/models"
   },
   models: [
-    { id: "gpt-5.5", name: "GPT-5.5", contextLength: 400000 },
-    { id: "gpt-5.4", name: "GPT-5.4", contextLength: 400000 },
-    { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
-    { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" }
+    { id: "gpt-6-luna", name: "GPT-6 Luna" },
+    { id: "gpt-6-sol", name: "GPT-6 Sol" },
+    { id: "gpt-6-astra", name: "GPT-6 Astra" }
   ],
   modelsFetcher: {
     url: "https://api.freemodel.dev/v1/models",

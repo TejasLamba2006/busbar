@@ -75,6 +75,15 @@ export const WEB_LOGIN_CONFIGS = {
       },
     ],
   },
+  "qwen-web": {
+    loginUrl: "https://chat.qwen.ai/auth",
+    cookieDomain: ".qwen.ai",
+    tokenSources: [
+      { type: "localStorage", name: "token" },
+      { type: "cookie", name: "token", optional: true },
+    ],
+    validateToken: (value) => typeof value === "string" && value.split(".").length === 3 && value.length >= 30,
+  },
 };
 
 export function getWebLoginConfig(providerId) {

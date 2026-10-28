@@ -3,20 +3,36 @@
 // /v1/models and the pickers all see them. Additive only: a failed or empty
 // fetch never removes anything, and built-in models stay as the fallback.
 
-import { PROVIDERS } from "open-sse/config/providers.js";
+import { PROVIDERS, PROVIDER_MEDIA } from "open-sse/providers/index.js";
 
 const TYPES_WITH_OWN_FETCH = ["openai-compatible", "anthropic-compatible"];
 
-// Most OpenAI-style providers serve /models next to /chat/completions.
+// Most OpenAI-style providers serve /models next to /chat/completions, or declare modelsFetcher/validateUrl.
 export function genericModelsConfig(providerId) {
-  const base = PROVIDERS[providerId]?.baseUrl || PROVIDERS[providerId]?.transport?.baseUrl;
-  if (typeof base !== "string" || !base.endsWith("/chat/completions")) return null;
+  const provider = PROVIDERS[providerId];
+  const media = PROVIDER_MEDIA[providerId];
+  const fetcherUrl = media?.modelsFetcher?.url || provider?.validateUrl;
+  const base = provider?.baseUrl || provider?.transport?.baseUrl;
+  let url = null;
+  if (typeof fetcherUrl === "string" && /\/models(?:\?|$)/.test(fetcherUrl)) {
+    url = fetcherUrl;
+  } else if (typeof base === "string" && base.endsWith("/chat/completions")) {
+    url = base.replace(/\/chat\/completions$/, "/models");
+  } else if (typeof base === "string" && base.endsWith("/responses")) {
+    url = base.replace(/\/responses$/, "/models");
+  }
+  if (!url) return null;
+  const isClaude = provider?.format === "claude";
   return {
-    url: base.replace(/\/chat\/completions$/, "/models"),
+    url,
     method: "GET",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
+    headers: {
+      "Content-Type": "application/json",
+      ...(isClaude ? { "Anthropic-Version": "2023-06-01" } : {}),
+      ...(provider?.headers || {}),
+    },
+    authHeader: isClaude ? "x-api-key" : (provider?.auth?.header || "Authorization"),
+    authPrefix: isClaude ? "" : (provider?.auth?.scheme === "raw" ? "" : "Bearer "),
     parseResponse: (data) => (Array.isArray(data) ? data : data?.data || data?.models || []),
   };
 }

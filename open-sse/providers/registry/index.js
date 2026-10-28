@@ -299,6 +299,7 @@ import p303 from "./zylo-api.js";
 import p304 from "./freepi.js";
 import p305 from "./freebuff.js";
 import p306 from "./typesafe.js";
+import p307 from "./qwen-web.js";
 export default [
   p0,
   p1,
@@ -599,4 +600,5 @@ export default [
   p304,
   p305,
   p306,
+  p307,
 ];

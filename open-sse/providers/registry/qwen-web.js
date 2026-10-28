@@ -1,0 +1,47 @@
+export default {
+  id: "qwen-web",
+  priority: 221,
+  alias: "qwen-web",
+  aliases: [
+    "qwen-chat",
+  ],
+  uiAlias: "qwen-web",
+  display: {
+    name: "Qwen Web",
+    icon: "auto_awesome",
+    color: "#615CED",
+    textIcon: "QW",
+    website: "https://chat.qwen.ai",
+    notice: {
+      text: "Free access to Qwen3.8-Max, Qwen3.7-Plus, and Qwen3.8-Omni-Flash (1M context, thinking, search) via your chat.qwen.ai account session.",
+      apiKeyUrl: "https://chat.qwen.ai",
+    },
+  },
+  category: "webCookie",
+  authType: "cookie",
+  authHint: "Use Login via Browser, or paste your JWT token from chat.qwen.ai localStorage (DevTools → Application → Local Storage → token)",
+  modelDiscovery: "refresh",
+  transport: {
+    baseUrl: "https://chat.qwen.ai/api/v2/chat/completions",
+    validateUrl: "https://chat.qwen.ai/api/models",
+    format: "openai",
+    authType: "cookie",
+  },
+  models: [
+    { id: "qwen3.8-max", name: "Qwen3.8 Max", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.8-max-think", name: "Qwen3.8 Max (Thinking)", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.8-max-search", name: "Qwen3.8 Max (Search)", contextLength: 1000000 },
+    { id: "qwen3.8-max-think-search", name: "Qwen3.8 Max (Think+Search)", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.7-plus", name: "Qwen3.7 Plus", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.7-plus-think", name: "Qwen3.7 Plus (Thinking)", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.7-plus-search", name: "Qwen3.7 Plus (Search)", contextLength: 1000000 },
+    { id: "qwen3.7-plus-think-search", name: "Qwen3.7 Plus (Think+Search)", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.8-omni-flash", name: "Qwen3.8 Omni Flash", contextLength: 1000000, supportsReasoning: true },
+    { id: "qwen3.8-omni-flash-think", name: "Qwen3.8 Omni Flash (Thinking)", contextLength: 1000000, supportsReasoning: true },
+  ],
+  modelsFetcher: {
+    url: "https://chat.qwen.ai/api/models",
+    type: "openai",
+  },
+  passthroughModels: true,
+};

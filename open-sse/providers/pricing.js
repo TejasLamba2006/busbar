@@ -128,6 +128,16 @@ export const MODEL_PRICING = {
   // === Qwen ===
   "qwen3-coder-plus":             { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
   "qwen3-coder-flash":            { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
+  "qwen3.8-max":                  { input: 2.00,  output: 6.00,  cached: 0.25,  reasoning: 6.00,   cache_creation: 2.50  },
+  "qwen3.8-max-think":            { input: 2.00,  output: 6.00,  cached: 0.25,  reasoning: 6.00,   cache_creation: 2.50  },
+  "qwen3.8-max-search":           { input: 2.00,  output: 6.00,  cached: 0.25,  reasoning: 6.00,   cache_creation: 2.50  },
+  "qwen3.8-max-think-search":     { input: 2.00,  output: 6.00,  cached: 0.25,  reasoning: 6.00,   cache_creation: 2.50  },
+  "qwen3.7-plus":                 { input: 0.40,  output: 1.60,  cached: 0.08,  reasoning: 1.60,   cache_creation: 0.40  },
+  "qwen3.7-plus-think":           { input: 0.40,  output: 1.60,  cached: 0.08,  reasoning: 1.60,   cache_creation: 0.40  },
+  "qwen3.7-plus-search":          { input: 0.40,  output: 1.60,  cached: 0.08,  reasoning: 1.60,   cache_creation: 0.40  },
+  "qwen3.7-plus-think-search":    { input: 0.40,  output: 1.60,  cached: 0.08,  reasoning: 1.60,   cache_creation: 0.40  },
+  "qwen3.8-omni-flash":           { input: 0.15,  output: 0.60,  cached: 0.03,  reasoning: 0.60,   cache_creation: 0.15  },
+  "qwen3.8-omni-flash-think":     { input: 0.15,  output: 0.60,  cached: 0.03,  reasoning: 0.60,   cache_creation: 0.15  },
 
   // === Kimi ===
   // Official platform.kimi.ai: cache-hit / cache-miss / output per 1M tokens

@@ -5,8 +5,8 @@
 import { getProviderConnections, upsertCustomModels } from "@/lib/localDb";
 import { getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
-import { PROVIDER_MODEL_DISCOVERY } from "open-sse/providers/index.js";
-import { syncConnectionModels } from "@/lib/providerModelSync";
+import { PROVIDER_MODEL_DISCOVERY, PROVIDER_MEDIA } from "open-sse/providers/index.js";
+import { syncConnectionModels, genericModelsConfig } from "@/lib/providerModelSync";
 
 let running = null;
 const runningByConnection = new Map();
@@ -20,9 +20,10 @@ async function fetchViaRoute(conn, signal) {
 }
 
 function supportsConnectionRefresh(conn) {
-  return isOpenAICompatibleProvider(conn.provider)
-    || isAnthropicCompatibleProvider(conn.provider)
-    || PROVIDER_MODEL_DISCOVERY[conn.provider] === "refresh";
+  if (isOpenAICompatibleProvider(conn.provider) || isAnthropicCompatibleProvider(conn.provider)) return true;
+  if (PROVIDER_MODEL_DISCOVERY[conn.provider] === "refresh") return true;
+  if (PROVIDER_MODEL_DISCOVERY[conn.provider] === "live") return false;
+  return Boolean(PROVIDER_MEDIA[conn.provider]?.modelsFetcher?.url || genericModelsConfig(conn.provider));
 }
 
 function unsupportedResult(conn) {

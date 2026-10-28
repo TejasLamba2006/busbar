@@ -6,8 +6,8 @@ import { CODEX_REVIEW_SUFFIX, isMuseSparkModel, opencodeFamilyFormats } from "..
 import { FORMATS } from "../translator/formats.js";
 export { PROVIDER_MODELS };
 
-// OpenCode providers sharing the endpoint-family fallback for unknown model ids
-const isOpenCodeAlias = (aliasOrId) => !aliasOrId || ["oc", "opencode", "ocg", "opencode-go", "ocz", "opencode-zen"].includes(aliasOrId);
+// OpenCode and AgentRouter providers sharing the endpoint-family fallback for unknown model ids
+const isOpenCodeAlias = (aliasOrId) => !aliasOrId || ["oc", "opencode", "ocg", "opencode-go", "ocz", "opencode-zen", "agentrouter"].includes(aliasOrId);
 
 
 // Helper functions

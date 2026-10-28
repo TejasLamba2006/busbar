@@ -223,6 +223,10 @@ async function runLogin(session, config) {
           // not JSON, keep raw
         }
         session.credential = val;
+      } else if (found.localStorageValues?.token && !found.cookieHeader.includes("token=")) {
+        session.credential = found.cookieHeader
+          ? `token=${found.localStorageValues.token}; ${found.cookieHeader}`
+          : `token=${found.localStorageValues.token}`;
       } else {
         session.credential = found.cookieHeader;
       }

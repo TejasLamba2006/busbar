@@ -678,7 +678,23 @@ export const PROVIDER_MODELS_CONFIG = {
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
     }
-  }
+  },
+  "qwen-web": {
+    url: "https://chat.qwen.ai/api/models",
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      source: "web",
+      Version: "0.3.26",
+    },
+    parseResponse: (data) =>
+      (data?.data || []).map((m) => ({
+        id: m.id,
+        name: m.name || m.id,
+        context_length: m.info?.meta?.max_context_length,
+        max_completion_tokens: m.info?.meta?.max_summary_generation_length,
+      })),
+  },
 };
 
 export function supportsProviderModelListing(providerId) {

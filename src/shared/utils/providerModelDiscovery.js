@@ -11,5 +11,8 @@ export function showsModelCatalog(providerInfo, isCompatible = false) {
 }
 
 export function showsModelRefresh(providerInfo, hasActiveConnection) {
-  return providerInfo?.modelDiscovery === "refresh" && hasActiveConnection;
+  if (!hasActiveConnection || !providerInfo) return false;
+  if (providerInfo.modelDiscovery === "refresh") return true;
+  if (providerInfo.modelDiscovery === "live") return false;
+  return Boolean(providerInfo.modelsFetcher?.url);
 }

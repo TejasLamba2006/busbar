@@ -337,12 +337,24 @@ export async function POST(request) {
         case "glm":
         case "glm-cn":
         case "kimi":
+        case "agentrouter": {
+          const cfg = PROVIDERS[provider];
+          const res = await fetch(cfg?.validateUrl || "https://agentrouter.org/v1/models", {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json",
+              ...(cfg?.headers || {}),
+            },
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
         case "minimax":
         case "minimax-cn":
         case "alicode-intl":
         case "alims-intl":
-        case "alicode":
-        case "agentrouter": {
+        case "alicode": {
           // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
           const cfg = PROVIDERS[provider];
           const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "alims-intl";
