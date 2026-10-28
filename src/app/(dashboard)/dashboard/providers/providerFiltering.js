@@ -18,6 +18,7 @@ export const AGGREGATOR_PROVIDERS = new Set([
   "aihubmix", "apinex", "experientiallabs", "cavoti", "electronhub", "llmgateway", "anyapi",
   "fastrouter", "literouter", "orcarouter", "unorouter", "poixe-ai", "sumopod", "naga-ai",
   "modelscope", "inceptionlabs", "seekai", "freemodel-dev", "ainative", "aion", "v0-vercel",
+  "pixrouter",
 ]);
 
 export const LOCAL_PROVIDERS = new Set([
