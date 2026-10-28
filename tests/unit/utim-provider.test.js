@@ -13,15 +13,28 @@ describe("utim provider", () => {
     expect(PROVIDERS.utim.baseUrl).toBe("https://api.utim.dev/api/playground/chat");
   });
 
-  it("exposes opus under both spellings plus the short alias, unique ids", () => {
+  it("exposes the current UTIM playground catalog models and short aliases, unique ids", () => {
     const ids = registry.models.map((m) => m.id);
-    expect(ids).toEqual(expect.arrayContaining(["antropic/claude-opus-5", "anthropic/claude-opus-5", "claude-opus-5"]));
+    expect(ids).toEqual(expect.arrayContaining([
+      "utim/deepseek-v4.1-flash",
+      "utim/kimi-k3",
+      "utim/glm-5.3-flash",
+      "utim/deepseek-v4.1-flash-1017",
+      "utim/minimax-m3",
+      "utim/glm-5.3",
+      "deepseek-v4.1-flash",
+      "kimi-k3",
+      "glm-5.3-flash",
+      "deepseek-v4.1-flash-1017",
+      "minimax-m3",
+      "glm-5.3",
+    ]));
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("uses the default executor against the playground endpoint without a key", () => {
     const ex = getExecutor("utim");
-    expect(ex.buildUrl("antropic/claude-opus-5", true)).toBe("https://api.utim.dev/api/playground/chat");
+    expect(ex.buildUrl("utim/deepseek-v4.1-flash", true)).toBe("https://api.utim.dev/api/playground/chat");
     const h = ex.buildHeaders({}, true);
     expect(h.Authorization).toBeUndefined();
   });

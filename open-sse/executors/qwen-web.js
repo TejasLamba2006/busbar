@@ -298,7 +298,7 @@ export class QwenWebExecutor extends BaseExecutor {
       return {
         response: errorResponse(
           401,
-          "Missing Qwen Web token — use Login via Browser, paste your JWT token from chat.qwen.ai localStorage (key 'token', starts with eyJ...), or enter email:password"
+          "Missing Qwen Web token — paste your JWT token from chat.qwen.ai localStorage (key 'token', starts with eyJ...), or enter email:password"
         ),
         url: QWEN_COMPLETION_URL,
         headers: {},
@@ -447,7 +447,7 @@ export class QwenWebExecutor extends BaseExecutor {
                 ok: false,
                 status: createRes.status === 200 ? 403 : createRes.status || 502,
                 error: createText.includes("aliyun_waf")
-                  ? "Qwen Web triggered Aliyun WAF slider verification — open Qwen Web via Login via Browser once to clear it"
+                  ? "Qwen Web triggered Aliyun WAF verification or token was rejected — verify your JWT token from chat.qwen.ai localStorage (key 'token')"
                   : `Qwen createChat returned non-JSON (HTTP ${createRes.status})`,
               };
             }
