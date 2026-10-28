@@ -71,15 +71,21 @@ export async function handleSystemoneCore({
 
   // noAuth free lanes carry accessToken "public" from the credential stub.
   const token = credentials?.apiKey || credentials?.accessToken;
+  const hasAssets = !!(body.assets && typeof body.assets === "object" && Object.keys(body.assets).length > 0);
+  const hasBoxQuestion = Object.values(body.questions || {}).some((q) => q?.type === "box");
+  const stateLen = typeof body.state === "string" ? body.state.length : JSON.stringify(body.state).length;
   const headers = {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(cfg.headers || {}),
+    ...(hasAssets || hasBoxQuestion ? { "TypeSafe-Danger-Zone-Images": "true" } : {}),
+    ...(stateLen > 120_000 || body.long_context === true ? { "TypeSafe-Danger-Zone-Long-Context": "true" } : {}),
     // Zen lanes expect the official client session header; other providers don't need it.
     ...(OPENCODE_PROVIDERS.has(provider) ? { "x-opencode-session": generateSessionId() } : {}),
   };
+  const { long_context: _dropLongContext, ...forwardBody } = body;
   // Cloudflare validates the body model as a short selector (e.g. "clef-flash"), not the full id.
-  const requestBody = { ...body, model: getModelUpstreamId(provider, model) || model };
+  const requestBody = { ...forwardBody, model: getModelUpstreamId(provider, model) || model };
 
   log?.debug?.("SYSTEMONE", `${provider.toUpperCase()} | ${model}`);
 

@@ -78,10 +78,19 @@ function credentialsFromConnection(connection, resolvedProxy) {
 }
 
 function githubMonthlyResetMs(status, errorText, provider) {
-  if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
-  if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const providerId = resolveProviderId(provider);
+  const text = String(errorText || "");
+  if (providerId === "github" && Number(status) === 402 && text.toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) {
+    const now = new Date();
+    return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  }
+  // FreePi 429 hourly_ceiling includes "Back in 52 min" — lock until that window resets
+  // instead of a 2s backoff that spams 429s every few seconds.
+  if (providerId === "freepi" && Number(status) === 429) {
+    const m = text.match(/Back in (\d+)\s*min/i);
+    if (m) return Date.now() + Number(m[1]) * 60 * 1000;
+  }
+  return null;
 }
 
 async function resolveNoAuthProxy(providerId) {

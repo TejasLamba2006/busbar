@@ -524,6 +524,35 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
 // Generic config-driven API-key probe for registry providers without a bespoke test case.
 // Auth is only rejected on 401/403; other statuses (400/404/429/...) still prove the key reached the API.
 async function testRegistryApiKey(connection, effectiveProxy) {
+  const providerMeta = AI_PROVIDERS[connection.provider];
+  const systemoneCfg = providerMeta?.systemoneConfig;
+  if (!PROVIDERS[connection.provider] && systemoneCfg) {
+    const key = connection.apiKey;
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+      ...(systemoneCfg.headers || {}),
+    };
+    const validateUrl = systemoneCfg.validateUrl || providerMeta?.modelsFetcher?.url;
+    if (validateUrl) {
+      const res = await fetchWithConnectionProxy(validateUrl, { headers }, effectiveProxy);
+      const valid = res.status !== 401 && res.status !== 403;
+      return { valid, error: valid ? null : "Invalid API key" };
+    }
+    const targetUrl = connection.providerSpecificData?.baseUrl || systemoneCfg.baseUrl;
+    const model = connection.defaultModel || getDefaultModel(connection.provider) || "jev-latest";
+    const res = await fetchWithConnectionProxy(targetUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        state: "ping",
+        questions: { q: { type: "noul", instructions: "Is this a ping?" } },
+      }),
+    }, effectiveProxy);
+    const valid = res.status !== 401 && res.status !== 403;
+    return { valid, error: valid ? null : "Invalid API key" };
+  }
   const cfg = PROVIDERS[connection.provider];
   if (!cfg) return { valid: false, error: "Provider test not supported" };
   const key = connection.apiKey;
@@ -1060,10 +1089,11 @@ export async function testSingleConnection(id) {
   }
 
   const start = Date.now();
+  const token = connection.apiKey || connection.accessToken;
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie") {
-    result = await testApiKeyConnection(connection, effectiveProxy);
+  if (connection.authType === "apikey" || connection.authType === "cookie" || (!OAUTH_TEST_CONFIG[connection.provider] && token)) {
+    result = await testApiKeyConnection({ ...connection, apiKey: token }, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);
   }

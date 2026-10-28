@@ -40,6 +40,8 @@ export default {
     { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free", targetFormat: "openai-responses" },
     { id: "muse-spark-1.3-contributor-free", name: "Muse Spark 1.3 Contributor Free", targetFormat: "openai-responses" },
     { id: "union-alpha", name: "Union Alpha Free", targetFormat: "claude" },
+    { id: "jev-latest", name: "Jev Latest", kind: "systemone" },
+    { id: "jev-1.14.0", name: "Jev 1.14.0", kind: "systemone" },
     { id: "jev-1.13-free", name: "Jev 1.13 Free", kind: "systemone" },
   ],
   serviceKinds: ["llm", "systemone"],

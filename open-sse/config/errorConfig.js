@@ -76,6 +76,8 @@ export const ERROR_RULES = [
   { text: "credit balance is too low", backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
+  { text: "requested model is not available", cooldownMs: COOLDOWN.long },
+  { text: "model service is temporarily unavailable", cooldownMs: TRANSIENT_COOLDOWN_MS },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },

@@ -1,0 +1,40 @@
+export default {
+  id: "typesafe",
+  priority: 42,
+  alias: "ts",
+  aliases: ["typesafe", "jev"],
+  uiAlias: "ts",
+  display: {
+    name: "TypeSafe (Jev / System One)",
+    icon: "psychology",
+    color: "#E551BA",
+    textIcon: "TS",
+    website: "https://docs.typesafe.ai",
+    notice: {
+      text: "Official TypeSafe System One (Jev) calibrated decision engine (choice, score, noul, box).",
+      apiKeyUrl: "https://console.typesafe.ai",
+    },
+  },
+  category: "apikey",
+  authType: "apikey",
+  hasProviderSpecificData: true,
+  models: [
+    { id: "jev-latest", name: "Jev Latest (1.14)", kind: "systemone" },
+    { id: "jev-preview", name: "Jev Preview", kind: "systemone" },
+    { id: "jev-1.14.0", name: "Jev 1.14.0", kind: "systemone" },
+    { id: "jev-1.13.0", name: "Jev 1.13.0", kind: "systemone" },
+  ],
+  serviceKinds: ["systemone"],
+  systemoneConfig: {
+    baseUrl: "https://api.typesafe.ai/v1/systemone",
+    path: "/v1/systemone",
+    validateUrl: "https://api.typesafe.ai/v1/models",
+    authType: "apikey",
+    authHeader: "bearer",
+  },
+  modelsFetcher: {
+    url: "https://api.typesafe.ai/v1/models",
+    type: "openai",
+  },
+  passthroughModels: true,
+};

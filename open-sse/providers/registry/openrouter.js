@@ -44,6 +44,8 @@ export default {
     { id: "google/veo-3.1", name: "Veo 3.1 (via OpenRouter)", params: ["duration","aspect_ratio","resolution"], kind: "video" },
     { id: "openai/sora-2-pro", name: "Sora 2 Pro (via OpenRouter)", params: ["duration","aspect_ratio","resolution"], kind: "video" },
     { id: "bytedance/seedance-2.0", name: "Seedance 2.0 (via OpenRouter)", params: ["duration","aspect_ratio","resolution"], kind: "video" },
+    { id: "typesafe/jev-latest", name: "Jev Latest", kind: "systemone" },
+    { id: "typesafe/jev-1.14", name: "Jev 1.14", kind: "systemone" },
     { id: "typesafe/jev-1.13", name: "Jev 1.13", kind: "systemone" },
   ],
   serviceKinds: ["llm","embedding","tts","imageToText","video","systemone"],

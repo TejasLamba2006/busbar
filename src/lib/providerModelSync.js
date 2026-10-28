@@ -44,6 +44,7 @@ export function classifyProviderModelKind(provider, model) {
   if (Array.isArray(outputModalities) && outputModalities.includes("image")) return "image";
   if (Array.isArray(outputModalities) && outputModalities.includes("audio")) return "tts";
 
+  if (provider === "typesafe" || /(?:^|\/)jev(?:-|$)|^clef(?:-|:|$)/i.test(id)) return "systemone";
   if (/embed/.test(id)) return "embedding";
   if (/whisper|transcri/.test(id)) return "stt";
   if (/tts|speech|orpheus/.test(id)) return "tts";
@@ -102,7 +103,7 @@ export async function syncConnectionModels(conn, { fetchModels, alias, builtinId
   const byKind = new Map();
   let invalid = 0;
   for (const rawModel of rawModels) {
-    const declaredKind = ["llm", "embedding", "image", "tts", "stt", "video"].includes(rawModel?.kind)
+    const declaredKind = ["llm", "embedding", "image", "tts", "stt", "video", "systemone"].includes(rawModel?.kind)
       ? rawModel.kind
       : null;
     const kind = declaredKind || classifyProviderModelKind(conn.provider, rawModel);

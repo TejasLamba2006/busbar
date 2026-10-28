@@ -40,8 +40,8 @@ export default {
     { id: "cloudflare/clef", name: "cloudflare/clef" },
     { id: "cloudflare/clef-flash", name: "cloudflare/clef-flash" },
     { id: "liquid/d1", name: "liquid/d1" },
-    { id: "typesafe/jev-1.13", name: "typesafe/jev-1.13" },
-    { id: "typesafe/jev-latest", name: "typesafe/jev-latest" },
+    { id: "typesafe/jev-1.13", name: "typesafe/jev-1.13", kind: "systemone" },
+    { id: "typesafe/jev-latest", name: "typesafe/jev-latest", kind: "systemone" },
     { id: "inference-net/schematron-v2-small", name: "inference-net/schematron-v2-small" },
     { id: "inference-net/schematron-v2-turbo", name: "inference-net/schematron-v2-turbo" },
     { id: "mistralai/mistral-small-24b-instruct-2501", name: "mistralai/mistral-small-24b-instruct-2501" },
@@ -126,6 +126,13 @@ export default {
     { id: "meta/muse-glimmer-30b", name: "meta/muse-glimmer-30b" },
     { id: "meta/muse-spark-1.2-contributor", name: "meta/muse-spark-1.2-contributor" }
   ],
+  serviceKinds: ["llm", "systemone"],
+  systemoneConfig: {
+    baseUrl: "https://nano-gpt.com/api/v1/systemone",
+    path: "/api/v1/systemone",
+    authType: "apikey",
+    authHeader: "bearer",
+  },
   modelsFetcher: {
     url: "https://nano-gpt.com/api/v1/models",
     type: "openai"

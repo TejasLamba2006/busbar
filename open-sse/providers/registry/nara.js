@@ -95,7 +95,7 @@ export default {
     { id: "gpt-6-luna", name: "gpt-6-luna" },
     { id: "gpt-6-sol", name: "gpt-6-sol" },
     { id: "gpt-6.1-sol", name: "gpt-6.1-sol" },
-    { id: "jev", name: "jev" },
+    { id: "jev", name: "Jev", kind: "systemone" },
     { id: "ling-3.0-flash-sante-free", name: "ling-3.0-flash-sante-free" },
     { id: "mimo-v2.6-flash", name: "mimo-v2.6-flash" },
     { id: "mimo-v2.6-flash-free", name: "mimo-v2.6-flash-free" },
@@ -104,12 +104,19 @@ export default {
     { id: "nemotron-3-ultra-free", name: "nemotron-3-ultra-free" },
     { id: "step-5-preview", name: "step-5-preview" },
     { id: "claude-haiku-5.5", name: "claude-haiku-5.5" },
-    { id: "jev-1.14.0", name: "Jev 1.14" },
+    { id: "jev-1.14.0", name: "Jev 1.14", kind: "systemone" },
     { id: "minimax-m3.1-flash", name: "MiniMax M3.1 Flash" },
     { id: "minimax-m3.1-flash:free", name: "MiniMax M3.1 Flash Free" },
     { id: "deepseek-v4.1-flash-fast", name: "DeepSeek v4.1 Flash Fast" },
     { id: "muse-wonder-1.0", name: "Muse Wonder" }
   ],
+  serviceKinds: ["llm", "systemone"],
+  systemoneConfig: {
+    baseUrl: "https://router.bynara.id/v1/systemone",
+    path: "/v1/systemone",
+    authType: "apikey",
+    authHeader: "bearer",
+  },
   modelsFetcher: {
     url: "https://router.bynara.id/v1/models",
     type: "openai"

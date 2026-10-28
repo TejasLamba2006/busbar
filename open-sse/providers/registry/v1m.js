@@ -2,7 +2,7 @@ export default {
   id: "v1m",
   priority: 45,
   alias: "v1m",
-  aliases: ["systemone", "jev"],
+  aliases: ["systemone"],
   uiAlias: "v1m",
   display: {
     name: "v1m (System One)",

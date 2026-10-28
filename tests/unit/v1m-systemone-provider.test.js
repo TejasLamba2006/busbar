@@ -27,3 +27,32 @@ describe("v1m System One provider", () => {
     expect(ids).toContain("v1m-decision-engine");
   });
 });
+
+describe("TypeSafe (official Jev / System One) provider", () => {
+  const entry = REGISTRY.find((e) => e.id === "typesafe");
+
+  it("is registered as the official TypeSafe System One apikey provider", () => {
+    expect(entry).toBeDefined();
+    expect(entry.alias).toBe("ts");
+    expect(entry.aliases).toContain("jev");
+    expect(entry.category).toBe("apikey");
+    expect(entry.serviceKinds).toEqual(["systemone"]);
+    expect(PROVIDER_MEDIA["typesafe"]?.systemoneConfig?.baseUrl).toBe("https://api.typesafe.ai/v1/systemone");
+  });
+
+  it("appears in getProvidersByKind('systemone')", () => {
+    const list = getProvidersByKind("systemone");
+    const found = list.find((p) => p.id === "typesafe");
+    expect(found).toBeDefined();
+    expect(found.alias).toBe("ts");
+    expect(found.systemoneConfig?.baseUrl).toBe("https://api.typesafe.ai/v1/systemone");
+  });
+
+  it("exposes official Jev models and aliases", () => {
+    const ids = (entry.models || []).map((m) => m.id);
+    expect(ids).toContain("jev-latest");
+    expect(ids).toContain("jev-preview");
+    expect(ids).toContain("jev-1.14.0");
+    expect(ids).toContain("jev-1.13.0");
+  });
+});
