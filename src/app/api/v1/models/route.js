@@ -15,6 +15,7 @@ import { getKeyAccessContext, filterModelsListForKey, enforceEndpointAccess } fr
 import { getDisabledModelIds } from "@/sse/services/modelVisibility.js";
 import { getLiveCatalogSnapshot, requestLiveCatalogRefresh } from "@/lib/modelCatalog/liveCatalogs.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { extractModelLimits } from "@/shared/utils/modelLimits.js";
 
 // Combo seats use UI aliases; the model registry also has transport aliases.
 // Capability overrides and catalog limits are keyed by provider id.
@@ -340,6 +341,15 @@ export async function buildModelsList(kindFilter) {
       );
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
+      // Limits the provider itself reported (registry entry, live catalog, imported custom model)
+      // beat name-pattern guesses from the static capability tables.
+      const reportedLimitsById = new Map();
+      const noteLimits = (id, source) => {
+        if (!id) return;
+        const found = extractModelLimits(source);
+        if (found.context || found.output) reportedLimitsById.set(id, found);
+      };
+      for (const m of providerModels) noteLimits(m?.id, m);
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
@@ -368,6 +378,7 @@ export async function buildModelsList(kindFilter) {
             .filter((m) => m?.id && m.capabilities)
             .map((m) => [m.id, m.capabilities])
         );
+        for (const m of liveModels) noteLimits(m?.id, m);
       }
 
       const modelIds = rawModelIds
@@ -386,6 +397,10 @@ export async function buildModelsList(kindFilter) {
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const customModelKindById = new Map();
+      for (const m of customModels) {
+        const alias = m?.providerAlias;
+        if (alias === staticAlias || alias === outputAlias || alias === providerId) noteLimits(String(m.id || "").trim(), m);
+      }
       const customModelIds = customModels
         .filter((m) => {
           if (!m?.id) return false;
@@ -470,8 +485,24 @@ export async function buildModelsList(kindFilter) {
             if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
             if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
           }
-          if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
-          if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
+          const reportedLimits = reportedLimitsById.get(modelId);
+          if (reportedLimits?.context) contextWindow = reportedLimits.context;
+          if (reportedLimits?.output) maxOutput = reportedLimits.output;
+          if (Number.isFinite(contextWindow)) {
+            model.context_length = contextWindow;
+            model.context_window = contextWindow;
+          }
+          if (Number.isFinite(maxOutput)) {
+            model.max_completion_tokens = maxOutput;
+            model.max_output_tokens = maxOutput;
+          }
+          // models.dev / opencode / openchamber read limits from { limit: { context, output } }.
+          if (Number.isFinite(contextWindow) || Number.isFinite(maxOutput)) {
+            model.limit = {
+              ...(Number.isFinite(contextWindow) ? { context: contextWindow } : {}),
+              ...(Number.isFinite(maxOutput) ? { output: maxOutput } : {}),
+            };
+          }
         }
         models.push(model);
       }

@@ -4,6 +4,7 @@
 // fetch never removes anything, and built-in models stay as the fallback.
 
 import { PROVIDERS, PROVIDER_MEDIA } from "open-sse/providers/index.js";
+import { extractModelLimits } from "@/shared/utils/modelLimits.js";
 
 const TYPES_WITH_OWN_FETCH = ["openai-compatible", "anthropic-compatible"];
 
@@ -91,6 +92,11 @@ export function normalizeModelList(list, prefixes = []) {
     seen.add(id);
     const reported = {};
     for (const field of REPORTED_FIELDS) if (m[field] !== undefined) reported[field] = m[field];
+    // Normalize the provider's many limit spellings (max_output_tokens, limit.context,
+    // inputTokenLimit, top_provider.*) into the two canonical fields /v1/models publishes.
+    const limits = extractModelLimits(m);
+    if (limits.context) reported.context_length = limits.context;
+    if (limits.output) reported.max_completion_tokens = limits.output;
     const display = m.displayName || ((m.id || m.model) && m.name) || id;
     out.push({ id, name: typeof display === "string" && display.trim() ? display.trim() : id, reported });
   }
