@@ -9,7 +9,7 @@
 // The profile persists, so a repeat login usually finds the session still
 // alive and resolves in one poll — and a warm profile keeps cf_clearance.
 
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { join } from "node:path";
 import { loadRuntimeDep } from "./lazyRuntime.js";
@@ -17,6 +17,7 @@ import { getWebLoginConfig } from "./webLoginConfig.js";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 import { pruneProfileCaches, formatBytes } from "./browserProfileCache.js";
 import { resolveSystemChromeExecutable } from "../executors/browserExecutableCheck.js";
+import { hasDisplay, ensureVirtualDisplay } from "./virtualDisplay.js";
 
 const POLL_INTERVAL_MS = 1500;
 const LOGIN_TIMEOUT_MS = 300000;
@@ -168,36 +169,45 @@ function clearStaleSingletonLocks(dir) {
   }
 }
 
-async function launchLoginBrowser(chromium, dir, executablePath) {
+async function launchLoginBrowser(chromium, dir, executablePath, env) {
+  const opts = {
+    headless: false,
+    ...(executablePath ? { executablePath } : {}),
+    ...(env ? { env } : {}),
+    viewport: null,
+    args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
+  };
   try {
-    return await chromium.launchPersistentContext(dir, {
-      headless: false,
-      executablePath,
-      viewport: null,
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, opts);
   } catch (error) {
     if (!/ProcessSingleton|SingletonLock/i.test(String(error?.message || ""))) throw error;
     clearStaleSingletonLocks(dir);
-    return await chromium.launchPersistentContext(dir, {
-      headless: false,
-      executablePath,
-      viewport: null,
-      args: ["--disable-blink-features=AutomationControlled"],
-    });
+    return await chromium.launchPersistentContext(dir, opts);
   }
 }
 
 async function runLogin(session, config) {
+  if (process.platform === "linux" && !hasDisplay()) {
+    throw new Error(
+      `Cannot open an interactive browser window on a headless server without a display. ` +
+      `Instead, click "Add Connection" and paste your ${session.providerId === "qwen-web" ? "token from chat.qwen.ai (DevTools → Application → Local Storage → token)" : "session cookie from your local browser"}, ` +
+      `or run Login via Browser on a local desktop instance.`
+    );
+  }
   const { chromium } = await loadRuntimeDep("playwright-core");
   const executablePath = resolveSystemChromeExecutable();
-  if (!executablePath) {
-    throw new Error("No Chrome/Chromium executable found — set CHROME_PATH or install Google Chrome");
+  if (!executablePath && typeof chromium?.executablePath === "function") {
+    const pwPath = chromium.executablePath();
+    if (!pwPath || !existsSync(pwPath)) {
+      throw new Error("No Chrome/Chromium executable found — set CHROME_PATH, install Google Chrome, or run `npx playwright-core install chromium`");
+    }
   }
   const dir = profileDir(session.profile);
   mkdirSync(dir, { recursive: true });
 
-  const context = await launchLoginBrowser(chromium, dir, executablePath);
+  const display = await ensureVirtualDisplay().catch(() => undefined);
+  const env = display ? { ...process.env, DISPLAY: display } : undefined;
+  const context = await launchLoginBrowser(chromium, dir, executablePath, env);
 
   try {
     const page = context.pages()[0] || (await context.newPage());

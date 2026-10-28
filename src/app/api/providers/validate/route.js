@@ -11,6 +11,7 @@ import {
   getNousApiKeyValidationError,
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
+import { hasWebIdentityProbe, fetchWebIdentity } from "open-sse/services/webIdentity.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -257,6 +258,18 @@ export async function POST(request) {
       // would reject bedrock outright and send bedrock-xai to a literal "{region}" host.
       if (AI_PROVIDERS[provider]?.credentialForm === "aws") {
         return NextResponse.json(await probeBedrockCredentials({ apiKey, providerSpecificData }, fetch));
+      }
+
+      // Web-cookie providers with an identity probe (qwen-web, deepseek-web, chatgpt-web, etc.)
+      if (hasWebIdentityProbe(provider)) {
+        const identity = await fetchWebIdentity(provider, apiKey || "");
+        if (identity.status === "valid") {
+          return NextResponse.json({ valid: true, error: null });
+        }
+        if (identity.status === "invalid") {
+          return NextResponse.json({ valid: false, error: identity.error || "Invalid session token" });
+        }
+        return NextResponse.json({ valid: true, error: null });
       }
 
       // Generic probe for webSearch/webFetch providers (config-driven)

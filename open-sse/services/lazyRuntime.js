@@ -11,7 +11,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
+import Module from "node:module";
 import { pathToFileURL } from "node:url";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 
@@ -25,14 +25,37 @@ function getRuntimeDir() {
   return path.join(getWritableDataDir(), "runtime");
 }
 
+function getRuntimePackageJson(dir = getRuntimeDir()) {
+  fs.mkdirSync(dir, { recursive: true });
+  const pkgJson = path.join(dir, "package.json");
+  if (!fs.existsSync(pkgJson)) {
+    fs.writeFileSync(
+      pkgJson,
+      JSON.stringify({ name: "9router-runtime", version: "1.0.0", private: true }, null, 2)
+    );
+  }
+  return pkgJson;
+}
+
+function importFromRuntimeDir(pkg, dir = getRuntimeDir()) {
+  const pkgJson = getRuntimePackageJson(dir);
+  // Use Module.createRequire rather than bare createRequire() so webpack does
+  // not replace the call with `(void 0)` when bundling server chunks.
+  const req = Module.createRequire(pkgJson);
+  const resolved = req.resolve(pkg);
+  return import(/* webpackIgnore: true */ pathToFileURL(resolved).href);
+}
+
 function isModuleMissing(error) {
   const code = String(error?.code || "");
-  return code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND";
+  if (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") return true;
+  const msg = String(error?.message || "");
+  return /Cannot find module|Cannot find package|resolve/i.test(msg);
 }
 
 function npmInstall(pkg, version) {
   const cwd = getRuntimeDir();
-  fs.mkdirSync(cwd, { recursive: true });
+  getRuntimePackageJson(cwd);
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const args = ["install", "--no-audit", "--no-fund", "--prefer-online", `${pkg}@${version}`];
   return new Promise((resolve) => {
@@ -54,9 +77,8 @@ async function load(pkg) {
     if (!isModuleMissing(error)) throw error;
   }
   // 2) Already present in the runtime dir from a previous install.
-  const runtimeRequire = createRequire(path.join(getRuntimeDir(), "package.json"));
   try {
-    return await import(pathToFileURL(runtimeRequire.resolve(pkg)).href);
+    return await importFromRuntimeDir(pkg);
   } catch (error) {
     if (!isModuleMissing(error)) throw error;
   }
@@ -71,7 +93,7 @@ async function load(pkg) {
       `install it manually: cd "${dir}" && npm install ${pkg}@${version}`
     );
   }
-  return import(pathToFileURL(createRequire(path.join(dir, "package.json")).resolve(pkg)).href);
+  return importFromRuntimeDir(pkg, dir);
 }
 
 export function loadRuntimeDep(pkg) {
