@@ -92,15 +92,26 @@ async function load(pkg) {
   // 3) Download on demand, then import from the runtime dir.
   const version = LAZY_DEP_VERSIONS[pkg] || "latest";
   const dir = getRuntimeDir();
-  const res = await npmInstall(pkg, version);
-  if (!res.ok) {
-    const reason = (res.stderr.match(/npm ERR! ?(.+)/) || [])[1] || res.stderr.split("\n").filter(Boolean).pop() || "unknown npm error";
-    throw new Error(
-      `${pkg} is missing and the on-demand install failed (${String(reason).slice(0, 160)}) — ` +
-      `install it manually: cd "${dir}" && npm install ${pkg}@${version}`
-    );
+  const install = async () => {
+    const res = await npmInstall(pkg, version);
+    if (!res.ok) {
+      const reason = (res.stderr.match(/npm ERR! ?(.+)/) || [])[1] || res.stderr.split("\n").filter(Boolean).pop() || "unknown npm error";
+      throw new Error(
+        `${pkg} is missing and the on-demand install failed (${String(reason).slice(0, 160)}) — ` +
+        `install it manually: cd "${dir}" && npm install ${pkg}@${version}`
+      );
+    }
+  };
+  await install();
+  try {
+    return await importFromRuntimeDir(pkg, dir);
+  } catch (error) {
+    // npm may exit 0 after a partial extraction; wipe only this package and retry once.
+    if (!isModuleMissing(error)) throw error;
+    fs.rmSync(path.join(dir, "node_modules", pkg), { recursive: true, force: true });
+    await install();
+    return importFromRuntimeDir(pkg, dir);
   }
-  return importFromRuntimeDir(pkg, dir);
 }
 
 export function loadRuntimeDep(pkg) {
