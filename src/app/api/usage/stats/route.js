@@ -18,9 +18,11 @@ export async function GET(request) {
 
     const cookieStore = await cookies();
     const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
-    const options = session?.role === "client" && session.apiKey ? { apiKey: session.apiKey } : {};
+    const isClientSession = session?.role === "client" && !!session.apiKey;
+    const options = isClientSession ? { apiKey: session.apiKey } : {};
     const stats = await getUsageStats(period, options);
-    return NextResponse.json(stats);
+    if (isClientSession) delete stats.recentRequests;
+    return NextResponse.json({ ...stats, isClientSession });
   } catch (error) {
     console.error("[API] Failed to get usage stats:", error);
     return NextResponse.json({ error: "Failed to fetch usage stats" }, { status: 500 });

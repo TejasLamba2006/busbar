@@ -217,6 +217,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
+  const [isClientSession, setIsClientSession] = useState(false);
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
@@ -270,6 +271,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .then((data) => {
         if (data) {
           hasLoadedStats.current = true;
+          setIsClientSession(data.isClientSession === true);
           setStats((prev) => ({ ...prev, ...data }));
         }
       })
@@ -280,8 +282,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       });
   }, [period]);
 
-  // SSE connection - real-time updates for activeRequests + recentRequests only
+  // SSE is Master-only: its active/recent request ring contains global traffic.
   useEffect(() => {
+    if (isClientSession) return;
     const es = new EventSource("/api/usage/stream");
 
     es.onmessage = (e) => {
@@ -307,7 +310,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [isClientSession]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -471,8 +474,8 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
 
-      {/* Provider topology + Recent Requests */}
-      {loading ? spinner : (
+      {/* Provider topology + Recent Requests (Master-only) */}
+      {loading ? spinner : isClientSession ? null : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
             providers={providers}

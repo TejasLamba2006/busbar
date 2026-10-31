@@ -21,6 +21,8 @@ const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let db;
 let settingsRoute;
+let statsRoute;
+let streamRoute;
 let clientKey;
 
 beforeAll(async () => {
@@ -30,6 +32,8 @@ beforeAll(async () => {
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   settingsRoute = await import("../../src/app/api/settings/route.js");
+  statsRoute = await import("../../src/app/api/usage/stats/route.js");
+  streamRoute = await import("../../src/app/api/usage/stream/route.js");
   await db.initDb();
   clientKey = await db.createApiKey("Client A", "client-a-machine-123456", [], {
     clientEmail: "client-a@example.com",
@@ -98,6 +102,20 @@ describe("per-client usage isolation", () => {
     expect(Object.values(stats.byApiKey)).toHaveLength(1);
     expect(Object.values(stats.byEndpoint).map((entry) => entry.endpoint)).toEqual(["/v1/chat/completions"]);
     expect(stats.recentRequests.map((entry) => entry.model)).toEqual(["client-a-model"]);
+  });
+
+  it("keeps Recent Requests and the live usage stream Master-only", async () => {
+    const statsResponse = await statsRoute.GET({
+      url: "http://localhost/api/usage/stats?period=all",
+    });
+    expect(statsResponse.body.isClientSession).toBe(true);
+    expect(statsResponse.body).not.toHaveProperty("recentRequests");
+
+    const streamResponse = await streamRoute.GET();
+    expect(streamResponse.status).toBe(403);
+    await expect(streamResponse.json()).resolves.toEqual({
+      error: "Forbidden: Recent Requests are available to the Master account only",
+    });
   });
 });
 

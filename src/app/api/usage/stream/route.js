@@ -1,8 +1,19 @@
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const cookieStore = await cookies();
+  const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+  if (session?.role === "client") {
+    return Response.json(
+      { error: "Forbidden: Recent Requests are available to the Master account only" },
+      { status: 403 },
+    );
+  }
+
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
