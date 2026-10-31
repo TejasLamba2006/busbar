@@ -21,9 +21,15 @@ export default {
   models: [
     { id: "mercury-2", name: "mercury-2" },
     { id: "mercury-2.5", name: "mercury-2.5" },
-    { id: "mercury-decide", name: "mercury-decide" },
+    { id: "mercury-decide", name: "mercury-decide", kind: "systemone" },
     { id: "mercury-3", name: "Inception: Mercury 3" }
   ],
+  serviceKinds: ["llm", "systemone"],
+  systemoneConfig: {
+    baseUrl: "https://api.inceptionlabs.ai/v1/decisions",
+    authType: "apikey",
+    authHeader: "bearer"
+  },
   modelsFetcher: {
     url: "https://api.inceptionlabs.ai/v1/models",
     type: "openai"

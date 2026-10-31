@@ -28,6 +28,20 @@ describe("v1m System One provider", () => {
   });
 });
 
+describe("Inception Labs System One provider", () => {
+  const entry = REGISTRY.find((e) => e.id === "inceptionlabs");
+
+  it("registers Mercury Decide as a System One model", () => {
+    expect(entry?.serviceKinds).toEqual(["llm", "systemone"]);
+    expect(entry?.models.find((m) => m.id === "mercury-decide")?.kind).toBe("systemone");
+    expect(PROVIDER_MEDIA["inceptionlabs"]?.systemoneConfig?.baseUrl).toBe("https://api.inceptionlabs.ai/v1/decisions");
+  });
+
+  it("appears in getProvidersByKind('systemone')", () => {
+    expect(getProvidersByKind("systemone").some((p) => p.id === "inceptionlabs")).toBe(true);
+  });
+});
+
 describe("TypeSafe (official Jev / System One) provider", () => {
   const entry = REGISTRY.find((e) => e.id === "typesafe");
 
