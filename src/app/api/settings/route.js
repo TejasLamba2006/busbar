@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { getApiKeyById, getSettings, updateApiKey, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
@@ -14,12 +16,39 @@ const SETTINGS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store"
 };
 
+const CLIENT_TOKEN_SAVER_KEYS = [
+  "rtkEnabled", "headroomEnabled", "headroomUrl", "headroomCompressUserMessages",
+  "headroomTimeoutMs", "cavemanEnabled", "cavemanLevel", "ponytailEnabled",
+  "ponytailLevel", "customPromptEnabled", "customPrompt", "pxpipeEnabled",
+  "pxpipeMinChars", "pxpipeTimeoutMs",
+];
+
+function pickClientTokenSaverSettings(settings) {
+  return Object.fromEntries(CLIENT_TOKEN_SAVER_KEYS
+    .filter((key) => Object.prototype.hasOwnProperty.call(settings || {}, key))
+    .map((key) => [key, settings[key]]));
+}
+
+async function getClientSession() {
+  const cookieStore = await cookies();
+  return getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+}
+
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 
 export async function GET() {
   try {
     const settings = await getSettings();
+    const session = await getClientSession();
+    if (session?.role === "client" && session.apiKeyId) {
+      const keyRecord = await getApiKeyById(session.apiKeyId);
+      return NextResponse.json({
+        ...pickClientTokenSaverSettings(settings),
+        ...pickClientTokenSaverSettings(keyRecord?.tokenSaverSettings),
+        isClientSession: true,
+      }, { headers: SETTINGS_RESPONSE_HEADERS });
+    }
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     
@@ -41,6 +70,17 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const body = await request.json();
+    const session = await getClientSession();
+    if (session?.role === "client" && session.apiKeyId) {
+      const patch = pickClientTokenSaverSettings(body);
+      const keyRecord = await updateApiKey(session.apiKeyId, { tokenSaverSettings: patch });
+      const settings = await getSettings();
+      return NextResponse.json({
+        ...pickClientTokenSaverSettings(settings),
+        ...pickClientTokenSaverSettings(keyRecord?.tokenSaverSettings),
+        isClientSession: true,
+      }, { headers: SETTINGS_RESPONSE_HEADERS });
+    }
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];

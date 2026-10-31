@@ -22,6 +22,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isAgentrouter = provider === "agentrouter";
   // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
   // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
   const usesAwsCredentialForm =
@@ -47,6 +48,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [agentrouterData, setAgentrouterData] = useState({
+    agentrouterSystemAccessToken: "",
+    agentrouterUserId: "",
+  });
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -82,6 +87,16 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isAgentrouter) {
+      const data = {};
+      if (agentrouterData.agentrouterSystemAccessToken.trim()) {
+        data.agentrouterSystemAccessToken = agentrouterData.agentrouterSystemAccessToken.trim();
+      }
+      if (agentrouterData.agentrouterUserId.trim()) {
+        data.agentrouterUserId = agentrouterData.agentrouterUserId.trim();
+      }
+      return Object.keys(data).length ? data : undefined;
     }
     if (usesAwsCredentialForm) {
       // Only send what the user filled in: an empty `profile` would otherwise select profile
@@ -307,6 +322,28 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving} variant="secondary">
                 {validating ? "Checking..." : "Check"}
               </Button>
+            </div>
+          </div>
+        )}
+        {isAgentrouter && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Quota Tracker Credentials</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="System Access Token"
+                type="password"
+                value={agentrouterData.agentrouterSystemAccessToken}
+                onChange={(e) => setAgentrouterData({ ...agentrouterData, agentrouterSystemAccessToken: e.target.value })}
+                placeholder="AgentRouter system access token"
+                hint="Separate from the routing API key. Create it under Personal Settings → Security Settings."
+              />
+              <Input
+                label="New-API User ID"
+                value={agentrouterData.agentrouterUserId}
+                onChange={(e) => setAgentrouterData({ ...agentrouterData, agentrouterUserId: e.target.value })}
+                placeholder="42"
+                hint="Required with the System Access Token to read wallet balance."
+              />
             </div>
           </div>
         )}

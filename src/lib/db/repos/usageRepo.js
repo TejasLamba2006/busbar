@@ -380,6 +380,7 @@ export async function getUsageHistory(filter = {}) {
 
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
+  if (filter.apiKey) { conds.push("apiKey = ?"); params.push(filter.apiKey); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
 
@@ -403,8 +404,9 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ? ORDER BY dateKey ASC`, [cutoffKey]);
 }
 
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", options = {}) {
   const db = await getAdapter();
+  const apiKey = options?.apiKey || null;
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
     import("./connectionsRepo.js"),
@@ -430,8 +432,14 @@ export async function getUsageStats(period = "all") {
     if (k.key) apiKeyMap[k.key.trim()] = { name: k.name, id: k.id, createdAt: k.createdAt };
   }
 
+  const usageWhere = apiKey ? "WHERE apiKey = ?" : "";
+  const usageParams = apiKey ? [apiKey] : [];
+
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(
+    `SELECT timestamp, provider, model, tokens, status FROM usageHistory ${usageWhere} ORDER BY id DESC LIMIT 100`,
+    usageParams
+  );
   const seen = new Set();
   const recentRequests = recentRows
     .map((r) => {
@@ -459,14 +467,14 @@ export async function getUsageStats(period = "all") {
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
-    pending: pendingRequests,
+    pending: apiKey ? { byModel: {}, byAccount: {} } : pendingRequests,
     activeRequests: [],
     recentRequests,
-    errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
+    errorProvider: apiKey ? "" : ((Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : ""),
   };
 
   // Active requests
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+  if (!apiKey) for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
       if (count > 0) {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
@@ -491,8 +499,8 @@ export async function getUsageStats(period = "all") {
     stats.last10Minutes.push(bucketMap[ts]);
   }
   const recent10 = db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-    [tenMinutesAgo.toISOString(), now.toISOString()]
+    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?${apiKey ? " AND apiKey = ?" : ""}`,
+    [tenMinutesAgo.toISOString(), now.toISOString(), ...(apiKey ? [apiKey] : [])]
   );
   for (const r of recent10) {
     const tt = new Date(r.timestamp).getTime();
@@ -505,7 +513,7 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  const useDailySummary = period !== "24h" && period !== "today";
+  const useDailySummary = !apiKey && period !== "24h" && period !== "today";
 
   if (useDailySummary) {
     const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
@@ -633,18 +641,18 @@ export async function getUsageStats(period = "all") {
       if (stats.byEndpoint[endpointKey] && new Date(ts) > new Date(stats.byEndpoint[endpointKey].lastUsed)) stats.byEndpoint[endpointKey].lastUsed = ts;
     }
   } else {
-    // 24h / today: live history
-    let cutoff;
+    // Client-scoped stats always use live history because usageDaily mixes API keys.
+    let cutoff = null;
     if (period === "today") {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       cutoff = startOfDay.toISOString();
-    } else {
-      cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
+    } else if (period !== "all") {
+      cutoff = new Date(Date.now() - (PERIOD_MS[period] || PERIOD_MS["24h"])).toISOString();
     }
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
-      [cutoff]
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE 1 = 1${cutoff ? " AND timestamp >= ?" : ""}${apiKey ? " AND apiKey = ?" : ""}`,
+      [...(cutoff ? [cutoff] : []), ...(apiKey ? [apiKey] : [])]
     );
 
     for (const r of filtered) {
@@ -730,8 +738,9 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", options = {}) {
   const db = await getAdapter();
+  const apiKey = options?.apiKey || null;
   const now = Date.now();
 
   if (period === "today") {
@@ -745,8 +754,8 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?${apiKey ? " AND apiKey = ?" : ""}`,
+      [new Date(startTime).toISOString(), ...(apiKey ? [apiKey] : [])]
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -769,8 +778,8 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, requests: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?${apiKey ? " AND apiKey = ?" : ""}`,
+      [new Date(startTime).toISOString(), ...(apiKey ? [apiKey] : [])]
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -784,6 +793,45 @@ export async function getChartData(period = "7d") {
   }
 
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  if (apiKey) {
+    const bucketCount = period === "all" ? null : period === "7d" ? 7 : period === "30d" ? 30 : 60;
+    let startTime;
+    if (bucketCount) {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - bucketCount + 1);
+      startTime = start.getTime();
+    } else {
+      const earliest = db.get(`SELECT MIN(timestamp) AS timestamp FROM usageHistory WHERE apiKey = ?`, [apiKey]);
+      if (!earliest?.timestamp) return [];
+      const start = new Date(earliest.timestamp);
+      start.setHours(0, 0, 0, 0);
+      startTime = start.getTime();
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const count = bucketCount || Math.max(1, Math.round((today.getTime() - startTime) / 86400000) + 1);
+    const buckets = Array.from({ length: count }, (_, i) => {
+      const d = new Date(startTime);
+      d.setDate(d.getDate() + i);
+      return { label: labelFn(d), tokens: 0, cost: 0, requests: 0 };
+    });
+    const rows = db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND apiKey = ?`,
+      [new Date(startTime).toISOString(), apiKey]
+    );
+    for (const row of rows) {
+      const date = new Date(row.timestamp);
+      date.setHours(0, 0, 0, 0);
+      const index = Math.round((date.getTime() - startTime) / 86400000);
+      if (index < 0 || index >= buckets.length) continue;
+      buckets[index].tokens += (row.promptTokens || 0) + (row.completionTokens || 0);
+      buckets[index].cost += row.cost || 0;
+      buckets[index].requests++;
+    }
+    return buckets;
+  }
 
   if (period === "all") {
     const dayRows = loadDaysInRange(db, null);
@@ -840,12 +888,13 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
-export async function getRecentLogs(limit = 200) {
+export async function getRecentLogs(limit = 200, options = {}) {
   try {
     const db = await getAdapter();
+    const apiKey = options?.apiKey || null;
     const rows = db.all(
-      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
-      [limit],
+      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory${apiKey ? " WHERE apiKey = ?" : ""} ORDER BY id DESC LIMIT ?`,
+      [...(apiKey ? [apiKey] : []), limit],
     );
     if (!rows.length) return [];
 

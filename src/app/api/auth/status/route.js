@@ -19,6 +19,7 @@ export async function GET() {
     const samlEmail = String(session?.samlEmail || "").trim();
 
     const displayName =
+      (session?.role === "client" ? session.clientEmail : null) ||
       samlName ||
       samlEmail ||
       oidcName ||
@@ -39,6 +40,9 @@ export async function GET() {
       displayName,
       loginMethod,
       authenticated: !!session,
+      role: session ? (session.role || "master") : null,
+      clientEmail: session?.clientEmail || null,
+      apiKeyId: session?.apiKeyId || null,
       oidcName: oidcName || null,
       oidcEmail: oidcEmail || null,
       oidcLogin: !!session?.oidc,
@@ -59,6 +63,9 @@ export async function GET() {
       displayName: "Password user",
       loginMethod: "Password",
       authenticated: false,
+      role: null,
+      clientEmail: null,
+      apiKeyId: null,
       oidcName: null,
       oidcEmail: null,
       oidcLogin: false,

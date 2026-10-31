@@ -1,6 +1,8 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
@@ -141,6 +143,11 @@ export async function GET(request, { params }) {
     // Get connection from database
     connection = await getProviderConnectionById(connectionId);
     if (!connection) {
+      return Response.json({ error: "Connection not found" }, { status: 404 });
+    }
+    const cookieStore = await cookies();
+    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    if (session?.role === "client" && connection.providerSpecificData?.ownerKeyId !== session.apiKeyId) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
 

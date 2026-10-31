@@ -9,7 +9,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getApiKeyByKey } from "@/lib/localDb";
 import { emitRequestError } from "@/lib/usageDb.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -253,6 +253,7 @@ export async function handleChat(request, clientRawRequest = null) {
  * Handle single model chat request
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
+  const clientKeyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -349,7 +350,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastHeaders = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      requestedModel: requestedModel || model,
+      apiKey,
+      clientKeyId: clientKeyRecord?.clientEmail ? clientKeyRecord.id : null,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -385,7 +390,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Use shared chatCore
     const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const effectiveSettings = clientKeyRecord?.tokenSaverSettings && Object.keys(clientKeyRecord.tokenSaverSettings).length > 0
+      ? { ...chatSettings, ...clientKeyRecord.tokenSaverSettings }
+      : chatSettings;
+    const providerThinking = (effectiveSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -395,28 +403,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      headroomTimeoutMs: chatSettings.headroomTimeoutMs,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      customPromptEnabled: !!chatSettings.customPromptEnabled,
-      customPrompt: chatSettings.customPrompt || "",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+      ccFilterNaming: !!effectiveSettings.ccFilterNaming,
+      rtkEnabled: !!effectiveSettings.rtkEnabled,
+      headroomEnabled: !!effectiveSettings.headroomEnabled,
+      headroomUrl: effectiveSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+      headroomCompressUserMessages: !!effectiveSettings.headroomCompressUserMessages,
+      headroomTimeoutMs: effectiveSettings.headroomTimeoutMs,
+      cavemanEnabled: !!effectiveSettings.cavemanEnabled,
+      cavemanLevel: effectiveSettings.cavemanLevel || "full",
+      ponytailEnabled: !!effectiveSettings.ponytailEnabled,
+      ponytailLevel: effectiveSettings.ponytailLevel || "full",
+      customPromptEnabled: !!effectiveSettings.customPromptEnabled,
+      customPrompt: effectiveSettings.customPrompt || "",
+      pxpipeEnabled: !!effectiveSettings.pxpipeEnabled,
+      pxpipeMinChars: effectiveSettings.pxpipeMinChars,
+      pxpipeTimeoutMs: effectiveSettings.pxpipeTimeoutMs,
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+      pxpipeTransform: effectiveSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
-      claudeClassifierCompat: chatSettings.claudeClassifierCompat || "off",
+      claudeClassifierCompat: effectiveSettings.claudeClassifierCompat || "off",
       // Per-provider user overrides (custom headers / connect timeout) from settings
-      providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,
+      providerOverrides: (effectiveSettings.providerOverrides || {})[provider] || null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

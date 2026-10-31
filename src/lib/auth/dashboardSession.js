@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -56,6 +57,16 @@ export async function getDashboardAuthSession(token) {
   } catch {
     return null;
   }
+}
+
+export async function getRequestDashboardSession(request) {
+  let token = request?.cookies?.get?.("auth_token")?.value;
+  if (!request?.cookies) {
+    const cookieStore = await cookies();
+    token = cookieStore.get("auth_token")?.value;
+  }
+  const payload = await getDashboardAuthSession(token);
+  return payload ? { ...payload, role: payload.role || "master" } : null;
 }
 
 export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {

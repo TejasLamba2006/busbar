@@ -46,6 +46,15 @@ import {
   readFilterParams,
 } from "./providerFiltering";
 
+const providerIdFromAssignment = (assignment) => String(assignment || "").split("/", 1)[0];
+
+export function filterClientProviderEntries(entries, connections, isClientSession, assignedModels) {
+  if (!isClientSession || !assignedModels?.length) return entries;
+  const allowed = new Set(assignedModels.map(providerIdFromAssignment));
+  for (const connection of connections) allowed.add(connection.provider);
+  return entries.filter((entry) => allowed.has(entry.key) || allowed.has(entry.info?.alias));
+}
+
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
   if (connected > 0) {
@@ -134,6 +143,8 @@ const dualAuthTypes = (info, key) => {
 
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
+  const [isClientSession, setIsClientSession] = useState(false);
+  const [assignedModels, setAssignedModels] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
@@ -209,8 +220,11 @@ export default function ProvidersPage() {
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
-        if (connectionsRes.ok)
+        if (connectionsRes.ok) {
           setConnections(connectionsData.connections || []);
+          setIsClientSession(connectionsData.isClientSession === true);
+          setAssignedModels(connectionsData.assignedModels || []);
+        }
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
       } catch (error) {
         console.log("Error fetching data:", error);
@@ -374,7 +388,12 @@ export default function ProvidersPage() {
     return out;
   }, [providerNodes]);
 
-  const entries = allEntries.map((e) => ({ ...e, stats: getProviderStats(e.key, e.authTypes) }));
+  const entries = filterClientProviderEntries(
+    allEntries.map((e) => ({ ...e, stats: getProviderStats(e.key, e.authTypes) })),
+    connections,
+    isClientSession,
+    assignedModels,
+  );
 
   const categoryCounts = {};
   for (const c of CATEGORY_FILTERS) {

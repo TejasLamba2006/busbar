@@ -52,9 +52,21 @@ export default function Sidebar({ onClose }) {
   const [releaseNotes, setReleaseNotes] = useState(null);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+  const [clientEmail, setClientEmail] = useState("");
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
+
+  useEffect(() => {
+    fetch("/api/auth/status", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        setIsClient(data?.role === "client");
+        setClientEmail(data?.clientEmail || "");
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     useSettingsStore.getState().fetchSettings().then((data) => {
@@ -150,7 +162,12 @@ export default function Sidebar({ onClose }) {
               <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
             </div>
           </Link>
-          {updateInfo && (
+          {clientEmail && (
+            <span className="w-fit max-w-full truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary" title={clientEmail}>
+              {clientEmail}
+            </span>
+          )}
+          {!isClient && updateInfo && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
@@ -181,7 +198,10 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
+          {(isClient ? navItems.filter((item) => [
+            "/dashboard/providers", "/dashboard/basic-chat", "/dashboard/usage",
+            "/dashboard/quota", "/dashboard/token-saver",
+          ].includes(item.href)) : navItems).map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -206,7 +226,7 @@ export default function Sidebar({ onClose }) {
           ))}
 
           {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
+          {!isClient && <div className="pt-3 mt-2 space-y-0.5">
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
               System
             </p>
@@ -335,7 +355,7 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">Settings</span>
             </Link>
-          </div>
+          </div>}
         </nav>
 
       </aside>

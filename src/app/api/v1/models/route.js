@@ -4,14 +4,17 @@ import {
   AI_PROVIDERS,
   FREE_PROVIDERS,
   FREE_TIER_PROVIDERS,
+  resolveProviderId,
   getNodeServiceKinds,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getProviderNodes, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getProviderNodes, getCombos, getCustomModels, getModelAliases, getApiKeyById, getApiKeyByKey } from "@/lib/localDb";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
-import { getKeyAccessContext, filterModelsListForKey, enforceEndpointAccess } from "@/sse/services/keyAccess.js";
+import { getKeyAccessContext, extractClientApiKey, filterModelsListForKey, enforceEndpointAccess } from "@/sse/services/keyAccess.js";
 import { getDisabledModelIds } from "@/sse/services/modelVisibility.js";
 import { getLiveCatalogSnapshot, requestLiveCatalogRefresh } from "@/lib/modelCatalog/liveCatalogs.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
@@ -138,11 +141,21 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-export async function buildModelsList(kindFilter) {
+export async function buildModelsList(kindFilter, options = {}) {
+  const clientKeyId = options.clientKeyId || options.clientKeyRecord?.id || null;
+  const clientAllowsNoAuthProvider = (providerId) => !options.clientKeyRecord?.access?.restricted
+    || (options.clientKeyRecord.access.allow || []).some((entry) =>
+      resolveProviderId(String(entry).split("/", 1)[0]) === providerId
+    );
   let connections = [];
   try {
     connections = await getProviderConnections();
-    connections = connections.filter(c => c.isActive !== false);
+    connections = clientKeyId
+      ? connections.filter((c) =>
+          c.providerSpecificData?.ownerKeyId === clientKeyId
+          && c.providerSpecificData?.clientActive !== false
+        )
+      : connections.filter(c => c.isActive !== false);
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
   }
@@ -193,7 +206,7 @@ export async function buildModelsList(kindFilter) {
 
   // Include no-auth free and free-tier providers (e.g. opencode, edge-tts) so their models are exposed in /v1/models
   for (const [id, provider] of Object.entries({ ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS })) {
-    if (provider?.noAuth && !activeConnectionByProvider.has(id)) {
+    if (provider?.noAuth && !activeConnectionByProvider.has(id) && (!clientKeyId || clientAllowsNoAuthProvider(id))) {
       activeConnectionByProvider.set(id, {
         id: "noauth",
         provider: id,
@@ -240,7 +253,7 @@ export async function buildModelsList(kindFilter) {
     models.push(entry);
   }
 
-      if (connections.length === 0) {
+      if (connections.length === 0 && !clientKeyId) {
     // DB unavailable -> return static models, filtered by per-model kind
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
@@ -557,13 +570,47 @@ export async function OPTIONS() {
  * For specific capabilities use /v1/models/{kind} (image, video, tts, stt, embedding, image-to-text, web, systemone).
  */
 export async function GET(request) {
-  const endpointDenied = enforceEndpointAccess(await getKeyAccessContext(request));
+  const keyAccess = await getKeyAccessContext(request);
+  const endpointDenied = enforceEndpointAccess(keyAccess);
   if (endpointDenied) return endpointDenied;
   try {
-    const data = await filterModelsListForKey(
-      await getKeyAccessContext(request),
-      await buildModelsList(ALL_SERVICE_KINDS)
+    const requestKey = extractClientApiKey(request);
+    let keyRecord = requestKey ? await getApiKeyByKey(requestKey) : null;
+    let clientKeyId = keyRecord?.clientEmail ? keyRecord.id : null;
+    if (!clientKeyId && !requestKey) {
+      const cookieStore = await cookies();
+      const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+      if (session?.role === "client") {
+        clientKeyId = session.apiKeyId;
+        keyRecord = await getApiKeyById(clientKeyId);
+      }
+    }
+    const connections = clientKeyId
+      ? (await getProviderConnections()).filter((connection) =>
+          connection.providerSpecificData?.ownerKeyId === clientKeyId
+          && connection.providerSpecificData?.clientActive !== false
+        )
+      : [];
+    const models = await buildModelsList(ALL_SERVICE_KINDS, { clientKeyId, clientKeyRecord: keyRecord });
+    const clientProviderIds = new Set(connections.map((connection) => connection.provider));
+    const assignedModels = keyRecord?.access?.allow || [];
+    const filteredByAssignments = await filterModelsListForKey(
+      keyAccess || (keyRecord?.access?.restricted ? {
+        keyId: keyRecord.id,
+        keyName: keyRecord.name || keyRecord.id,
+        modelRestricted: true,
+        allow: assignedModels,
+        allowedEndpoints: keyRecord.allowedEndpoints || [],
+        _sets: null,
+      } : null),
+      models
     );
+    const data = keyRecord?.access?.restricted
+      ? models.filter((model) =>
+          filteredByAssignments.includes(model)
+          || clientProviderIds.has(resolveProviderId(model.owned_by))
+        )
+      : filteredByAssignments;
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

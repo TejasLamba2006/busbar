@@ -24,6 +24,7 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newClientEmail, setNewClientEmail] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -622,7 +623,7 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, clientEmail: newClientEmail || undefined }),
       });
       const data = await res.json();
 
@@ -630,6 +631,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewClientEmail("");
         setShowAddModal(false);
       }
     } catch (error) {
@@ -1072,6 +1074,11 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  {key.clientEmail && (
+                    <span className="mt-1 inline-block rounded-xl border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                      {key.clientEmail}
+                    </span>
+                  )}
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
@@ -1134,6 +1141,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewClientEmail("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1143,6 +1151,13 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <Input
+            label="Client Email"
+            type="email"
+            value={newClientEmail}
+            onChange={(e) => setNewClientEmail(e.target.value)}
+            placeholder="client@email.com (optional)"
+          />
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1151,6 +1166,7 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewClientEmail("");
               }}
               variant="ghost"
               fullWidth

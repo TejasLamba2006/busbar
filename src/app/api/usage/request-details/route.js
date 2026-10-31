@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { getProviderConnections } from "@/lib/localDb";
 import { getRequestDetails } from "@/lib/usageDb";
 
 /**
@@ -38,7 +41,17 @@ export async function GET(request) {
       page,
       pageSize
     };
-    
+
+    let clientConnectionIds = null;
+    const cookieStore = await cookies();
+    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    if (session?.role === "client" && session.apiKeyId) {
+      const connections = await getProviderConnections();
+      clientConnectionIds = new Set(connections
+        .filter((connection) => connection.providerSpecificData?.ownerKeyId === session.apiKeyId)
+        .map((connection) => connection.id));
+    }
+
     if (provider) filter.provider = provider;
     if (model) filter.model = model;
     if (connectionId) filter.connectionId = connectionId;
@@ -47,6 +60,15 @@ export async function GET(request) {
     if (endDate) filter.endDate = endDate;
     
     const result = await getRequestDetails(filter);
+    if (clientConnectionIds) {
+      result.details = (result.details || []).filter((detail) => clientConnectionIds.has(detail.connectionId));
+      result.pagination = {
+        ...result.pagination,
+        totalItems: result.details.length,
+        totalPages: result.details.length ? 1 : 0,
+        hasNext: false,
+      };
+    }
 
     // Redact conversation payloads: the stored details include full request
     // bodies (user prompts, tool calls) and provider responses. Returning them

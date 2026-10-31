@@ -9,10 +9,10 @@ export default {
     icon: "router",
     color: "#10B981",
     textIcon: "AR",
-    website: "https://agentrouter.org",
+    website: "https://agentrouter.org/register?aff=iBCR",
     notice: {
       text: "$200 free credits on signup - multi-model routing gateway",
-      apiKeyUrl: "https://agentrouter.org"
+      apiKeyUrl: "https://agentrouter.org/register?aff=iBCR"
     }
   },
   category: "freeTier",
@@ -57,6 +57,10 @@ export default {
   modelsFetcher: {
     url: "https://agentrouter.org/v1/models",
     type: "openai"
+  },
+  features: {
+    usage: true,
+    usageApikey: true,
   },
   passthroughModels: true
 };

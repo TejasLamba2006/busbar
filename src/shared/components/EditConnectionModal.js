@@ -23,6 +23,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [agentrouterData, setAgentrouterData] = useState({
+    agentrouterSystemAccessToken: "",
+    agentrouterUserId: "",
+  });
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
@@ -54,6 +58,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "agentrouter") {
+        const psd = connection.providerSpecificData || {};
+        setAgentrouterData({
+          agentrouterSystemAccessToken: psd.agentrouterSystemAccessToken || "",
+          agentrouterUserId: psd.agentrouterUserId || "",
+        });
+      }
       if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
         const psd = connection.providerSpecificData || {};
         setAwsData({
@@ -81,6 +92,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isAgentrouter = connection?.provider === "agentrouter";
   const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
@@ -189,7 +201,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           updates.lastErrorAt = null;
         }
       }
-      
+
       // Add Azure-specific data if this is an Azure connection
       if (isAzure) {
         updates.providerSpecificData = {
@@ -201,6 +213,14 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isAgentrouter) {
+        updates.providerSpecificData = {
+          ...(connection.providerSpecificData || {}),
+          ...(updates.providerSpecificData || {}),
+          agentrouterSystemAccessToken: agentrouterData.agentrouterSystemAccessToken.trim(),
+          agentrouterUserId: agentrouterData.agentrouterUserId.trim(),
+        };
       }
       if (usesAwsCredentialForm) {
         updates.providerSpecificData = buildAwsSpecificData();
@@ -284,6 +304,28 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </div>
             )}
           </>
+        )}
+
+        {isAgentrouter && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Quota Tracker Credentials</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="System Access Token"
+                type="password"
+                value={agentrouterData.agentrouterSystemAccessToken}
+                onChange={(e) => setAgentrouterData({ ...agentrouterData, agentrouterSystemAccessToken: e.target.value })}
+                placeholder="AgentRouter system access token"
+                hint="Separate from the routing API key."
+              />
+              <Input
+                label="New-API User ID"
+                value={agentrouterData.agentrouterUserId}
+                onChange={(e) => setAgentrouterData({ ...agentrouterData, agentrouterUserId: e.target.value })}
+                placeholder="42"
+              />
+            </div>
+          </div>
         )}
 
         {isAzure && (

@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { getApiKeyById } from "@/lib/localDb";
 import {
   getProviderConnections,
   createProviderConnection,
@@ -51,10 +54,25 @@ async function normalizeProxyPoolId(proxyPoolId) {
   return { proxyPoolId: normalizedId };
 }
 
+async function getSession() {
+  try {
+    const cookieStore = await cookies();
+    return getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/providers - List all connections
 export async function GET() {
   try {
+    const session = await getSession();
+    const isClientSession = session?.role === "client";
     const connections = await getProviderConnections();
+    const visibleConnections = isClientSession
+      ? connections.filter((c) => c.providerSpecificData?.ownerKeyId === session.apiKeyId)
+      : connections;
+    const keyRecord = isClientSession ? await getApiKeyById(session.apiKeyId) : null;
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -66,7 +84,7 @@ export async function GET() {
     } catch { }
 
     // Hide sensitive fields, enrich name for compatible providers
-    const safeConnections = connections.map(c => {
+    const safeConnections = visibleConnections.map(c => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
@@ -74,10 +92,15 @@ export async function GET() {
       return {
         ...toProviderConnectionResponse(c),
         name,
+        ...(isClientSession ? { isActive: c.providerSpecificData?.clientActive !== false } : {}),
       };
     });
 
-    return NextResponse.json({ connections: safeConnections });
+    return NextResponse.json({
+      connections: safeConnections,
+      assignedModels: isClientSession && keyRecord?.access?.restricted ? (keyRecord.access.allow || []) : [],
+      isClientSession,
+    });
   } catch (error) {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
@@ -87,6 +110,8 @@ export async function GET() {
 // POST /api/providers - Create new connection (API Key only, OAuth via separate flow)
 export async function POST(request) {
   try {
+    const session = await getSession();
+    const isClientSession = session?.role === "client";
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
     const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
@@ -179,16 +204,25 @@ export async function POST(request) {
       mergedProviderSpecificData.proxyPoolId = proxyPoolId;
     }
 
+    if (isClientSession) {
+      Object.assign(mergedProviderSpecificData, {
+        ownerKeyId: session.apiKeyId,
+        ownerEmail: session.clientEmail,
+        clientActive: true,
+      });
+    }
+
     const newConnection = await createProviderConnection({
       provider,
       authType: isWebCookieProvider ? "cookie" : "apikey",
-      name: connectionName,
+      name: isClientSession ? `Client: ${session.clientEmail} - ${connectionName}` : connectionName,
+      email: isClientSession ? session.clientEmail : undefined,
       apiKey: apiKey || "",
       priority: priority || 1,
       globalPriority: globalPriority || null,
       defaultModel: defaultModel || null,
       providerSpecificData: mergedProviderSpecificData,
-      isActive: true,
+      isActive: !isClientSession,
       testStatus: testStatus || "unknown",
       // POST with an id is an explicit edit of that connection; without one, a
       // name collision is refused rather than silently overwriting a key. #4311

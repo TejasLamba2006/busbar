@@ -744,6 +744,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "deepseek":
+      case "agentrouter":
         // Credit balance — remainingPercentage only (no absolute remaining).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import {
   getProviderConnectionById,
   getProxyPoolById,
@@ -68,13 +70,28 @@ function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, has
   return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
 }
 
+async function getSession() {
+  try {
+    const cookieStore = await cookies();
+    return getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+  } catch {
+    return null;
+  }
+}
+
+function clientOwns(session, connection) {
+  return session?.role !== "client"
+    || connection?.providerSpecificData?.ownerKeyId === session.apiKeyId;
+}
+
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
   try {
+    const session = await getSession();
     const { id } = await params;
     const connection = await getProviderConnectionById(id);
 
-    if (!connection) {
+    if (!connection || !clientOwns(session, connection)) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
@@ -88,6 +105,7 @@ export async function GET(request, { params }) {
 // PUT /api/providers/[id] - Update connection
 export async function PUT(request, { params }) {
   try {
+    const session = await getSession();
     const { id } = await params;
     const body = await request.json();
     const {
@@ -104,7 +122,7 @@ export async function PUT(request, { params }) {
     } = body;
 
     const existing = await getProviderConnectionById(id);
-    if (!existing) {
+    if (!existing || !clientOwns(session, existing)) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
@@ -123,7 +141,7 @@ export async function PUT(request, { params }) {
     if (priority !== undefined) updateData.priority = priority;
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
-    if (isActive !== undefined) updateData.isActive = isActive;
+    if (isActive !== undefined && session?.role !== "client") updateData.isActive = isActive;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
@@ -172,6 +190,13 @@ export async function PUT(request, { params }) {
       }
     }
 
+    if (session?.role === "client" && isActive !== undefined) {
+      updateData.providerSpecificData = {
+        ...(existing.providerSpecificData || {}),
+        clientActive: Boolean(isActive),
+      };
+    }
+
     const updated = await updateProviderConnection(id, updateData);
 
     return NextResponse.json({ connection: toProviderConnectionResponse(updated) });
@@ -184,7 +209,13 @@ export async function PUT(request, { params }) {
 // DELETE /api/providers/[id] - Delete connection
 export async function DELETE(request, { params }) {
   try {
+    const session = await getSession();
     const { id } = await params;
+
+    const existing = await getProviderConnectionById(id);
+    if (!existing || !clientOwns(session, existing)) {
+      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
 
     const deleted = await deleteProviderConnection(id);
     if (!deleted) {

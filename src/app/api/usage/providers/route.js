@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getDistinctProviders } from "@/lib/requestDetailsDb";
-import { getProviderNodes } from "@/lib/localDb";
+import { getProviderConnections, getProviderNodes } from "@/lib/localDb";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 /**
@@ -9,6 +11,18 @@ import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
  */
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    if (session?.role === "client") {
+      const connections = (await getProviderConnections())
+        .filter((connection) => connection.providerSpecificData?.ownerKeyId === session.apiKeyId)
+        .map((connection) => ({
+          ...connection,
+          isActive: connection.providerSpecificData?.clientActive !== false,
+        }));
+      return NextResponse.json({ connections });
+    }
+
     // Query DISTINCT provider column directly — avoids parsing every row's
     // full JSON blob (can be hundreds of MB), which previously caused OOM.
     const providerIds = await getDistinctProviders();

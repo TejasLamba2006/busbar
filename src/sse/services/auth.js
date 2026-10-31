@@ -1,4 +1,4 @@
-import { getProviderConnections, getProviderConnectionById, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, getProviderConnectionById, getApiKeyById, getApiKeyByKey, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -159,9 +159,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+    let clientKeyRecord = options?.clientKeyRecord || null;
+    if (!clientKeyRecord && options?.clientKeyId) clientKeyRecord = await getApiKeyById(options.clientKeyId);
+    if (!clientKeyRecord && options?.apiKey) {
+      const keyRecord = await getApiKeyByKey(options.apiKey);
+      if (keyRecord?.clientEmail) clientKeyRecord = keyRecord;
+    }
+    const clientKeyId = options?.clientKeyId || clientKeyRecord?.id || null;
 
-    // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
-    if (FREE_PROVIDERS[providerId]?.noAuth) {
+    // Inject a virtual connection for no-auth free providers only when this key may use it.
+    if (
+      FREE_PROVIDERS[providerId]?.noAuth
+      && (!clientKeyId || !clientKeyRecord?.access?.restricted
+        || (clientKeyRecord.access.allow || []).some((entry) => resolveProviderId(String(entry).split("/", 1)[0]) === providerId))
+    ) {
       const resolvedProxy = await resolveNoAuthProxy(providerId);
       return {
         id: "noauth",
@@ -181,7 +192,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const allConnections = await getProviderConnections({ provider: providerId });
+    const connections = clientKeyId
+      ? allConnections.filter((c) =>
+          c.providerSpecificData?.ownerKeyId === clientKeyId
+          && c.providerSpecificData?.clientActive !== false
+        )
+      : allConnections.filter((c) => c.isActive !== false);
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {

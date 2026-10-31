@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getRequestDashboardSession } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
@@ -47,6 +47,18 @@ const ALWAYS_PROTECTED = [
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
   "/api/oauth/zed/auto-import",
+];
+
+const CLIENT_ALLOWED_API_PREFIXES = [
+  "/api/providers", "/api/models", "/api/usage", "/api/settings", "/api/oauth",
+  "/api/headroom", "/api/pxpipe", "/api/auth", "/api/locale", "/api/version",
+  "/api/health", "/api/init",
+];
+
+const CLIENT_BLOCKED_DASHBOARD_PREFIXES = [
+  "/dashboard/endpoint", "/dashboard/combos", "/dashboard/cli-tools",
+  "/dashboard/proxy-pools", "/dashboard/skills", "/dashboard/console-log",
+  "/dashboard/translator",
 ];
 
 // Require auth, but allow through if requireLogin is disabled
@@ -207,6 +219,21 @@ export const __test__ = {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+  const session = await getRequestDashboardSession(request);
+
+  if (session?.role === "client") {
+    if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
+      return NextResponse.json({ error: "Forbidden: Master account required" }, { status: 403 });
+    }
+    if (pathname.startsWith("/api/") && !isPublicApi(pathname) &&
+      !CLIENT_ALLOWED_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      return NextResponse.json({ error: "Forbidden: Master account required" }, { status: 403 });
+    }
+    if (pathname === "/dashboard" ||
+      CLIENT_BLOCKED_DASHBOARD_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      return NextResponse.redirect(new URL("/dashboard/providers", request.url));
+    }
+  }
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
@@ -217,8 +244,7 @@ export async function proxy(request) {
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (await hasValidCliToken(request) || await hasValidToken(request))
-      return NextResponse.next();
+    if (await hasValidCliToken(request) || session) return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -230,8 +256,10 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
-      return NextResponse.next();
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (session) return NextResponse.next();
+    const settings = await loadSettings();
+    if (settings?.requireLogin === false) return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -264,14 +292,7 @@ export async function proxy(request) {
     if (!requireLogin) return NextResponse.next();
 
     // Verify JWT token
-    const token = request.cookies.get("auth_token")?.value;
-    if (token) {
-      if (await verifyDashboardAuthToken(token)) {
-        return NextResponse.next();
-      } else {
-        return NextResponse.redirect(new URL("/login", request.url));
-      }
-    }
+    if (session) return NextResponse.next();
 
     return NextResponse.redirect(new URL("/login", request.url));
   }

@@ -5,6 +5,12 @@ import { Card, Button, Input } from "@/shared/components";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState("signin");
+  const [masterPassword, setMasterPassword] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [keyName, setKeyName] = useState("");
+  const [createdAccount, setCreatedAccount] = useState(null);
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
@@ -41,7 +47,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated === true || data.requireLogin === false) {
-            window.location.assign("/dashboard");
+            window.location.assign(data.role === "client" ? "/dashboard/providers" : "/dashboard");
             return;
           }
           setHasPassword(!!data.hasPassword);
@@ -73,7 +79,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, email, mode: email.trim() ? "client" : "signin" }),
       });
 
       if (res.ok) {
@@ -82,7 +88,7 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
-        window.location.assign("/dashboard");
+        window.location.assign(data.role === "client" ? "/dashboard/providers" : "/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
@@ -114,6 +120,30 @@ export default function LoginPage() {
         setError(data.error || "Failed to set password");
       }
     } catch (err) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setCreatedAccount(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "signup", masterPassword, clientEmail, keyName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to create client account");
+        return;
+      }
+      setCreatedAccount(data);
+    } catch {
       setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
@@ -189,21 +219,83 @@ export default function LoginPage() {
             </form>
           ) : (
           <div className="flex flex-col gap-4">
-            {samlAvailable && (
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-2 p-1" role="tablist" aria-label="Account access mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "signin"}
+                onClick={() => { setMode("signin"); setError(""); setCreatedAccount(null); }}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${mode === "signin" ? "bg-bg text-text-main shadow-sm" : "text-text-muted"}`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "signup"}
+                onClick={() => { setMode("signup"); setError(""); setCreatedAccount(null); }}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${mode === "signup" ? "bg-bg text-text-main shadow-sm" : "text-text-muted"}`}
+              >
+                Create Client Account
+              </button>
+            </div>
+
+            {mode === "signin" && samlAvailable && (
               <Button type="button" variant="primary" className="w-full" onClick={handleSamlLogin}>
                 {samlLoginLabel}
               </Button>
             )}
 
-            {oidcAvailable && (
+            {mode === "signin" && oidcAvailable && (
               <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
                 {oidcLoginLabel}
               </Button>
             )}
 
-            {ssoAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+            {mode === "signin" && ssoAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
 
-            {passwordAvailable ? (
+            {mode === "signup" ? (
+              createdAccount ? (
+                <div className="flex flex-col gap-4">
+                  <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300">Client account created</p>
+                    <p className="mt-1 text-xs text-text-muted">Save this API key password now.</p>
+                  </div>
+                  <Input label="Client Email" value={createdAccount.clientEmail || ""} readOnly />
+                  <Input label="API Key Password" value={createdAccount.apiKey || ""} readOnly inputClassName="font-mono" />
+                  <Button type="button" className="w-full" onClick={() => window.location.assign("/dashboard/providers")}>Continue</Button>
+                </div>
+              ) : (
+                <form onSubmit={handleSignup} className="flex flex-col gap-4">
+                  <Input
+                    label="Master Password"
+                    type="password"
+                    value={masterPassword}
+                    onChange={(e) => setMasterPassword(e.target.value)}
+                    placeholder="Master dashboard password"
+                    required
+                  />
+                  <Input
+                    label="Client Email"
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="client@email.com"
+                    required
+                  />
+                  <Input
+                    label="Name"
+                    value={keyName}
+                    onChange={(e) => setKeyName(e.target.value)}
+                    placeholder="Optional client name"
+                  />
+                  {error && <p className="text-xs text-red-500">{error}</p>}
+                  <Button type="submit" variant="primary" className="w-full" loading={loading}>
+                    Create Client Account
+                  </Button>
+                </form>
+              )
+            ) : passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 {isSsoEnabled && !ssoAvailable && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
@@ -217,28 +309,34 @@ export default function LoginPage() {
                   </p>
                 )}
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Password</label>
-                  <Input
-                    type="password"
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoFocus={!oidcAvailable}
-                  />
-                  {error && <p className="text-xs text-red-500">{error}</p>}
-                  {retryAfter > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
-                    </p>
-                  )}
-                  {resetHint && (
-                    <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
-                    </p>
-                  )}
-                </div>
+                <Input
+                  label="Client Email"
+                  type="email"
+                  placeholder="client@email.com (optional for Master)"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                />
+                <Input
+                  label="Password"
+                  type="password"
+                  placeholder={email ? "sk-... API key" : "Master password or sk-... API key"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoFocus={!oidcAvailable}
+                />
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                {retryAfter > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                  </p>
+                )}
+                {resetHint && (
+                  <p className="text-xs text-text-muted">
+                    Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                  </p>
+                )}
 
                 <Button
                   type="submit"
@@ -247,11 +345,11 @@ export default function LoginPage() {
                   loading={loading}
                   disabled={retryAfter > 0}
                 >
-                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
+                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Sign In"}
                 </Button>
 
                 <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                  Master can leave email blank. Clients use their email and <code className="bg-sidebar px-1 rounded">sk-...</code> API key password.
                 </p>
                 {hasPassword === false && (
                   <p className="text-xs text-center text-amber-600 dark:text-amber-400">
