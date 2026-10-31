@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
@@ -85,8 +87,18 @@ export async function GET(request) {
     const page = parsePositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
+    const cookieStore = await cookies();
+    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
     const allConnections = await getProviderConnections();
-    const eligibleConnections = allConnections.filter(isUsageEligible);
+    const visibleConnections = session?.role === "client"
+      ? allConnections
+          .filter((connection) => connection.providerSpecificData?.ownerKeyId === session.apiKeyId)
+          .map((connection) => ({
+            ...connection,
+            isActive: connection.providerSpecificData?.clientActive !== false,
+          }))
+      : allConnections;
+    const eligibleConnections = visibleConnections.filter(isUsageEligible);
     const providerOptions = Array.from(new Set(eligibleConnections.map((conn) => conn.provider))).sort();
 
     const providerFilteredConnections = eligibleConnections.filter((conn) => (

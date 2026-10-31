@@ -2170,5 +2170,10 @@
     "baseUrl": "https://pixrouter.com/v1/chat/completions",
     "validateUrl": "https://pixrouter.com/v1/models",
     "format": "openai"
+  },
+  "inferx": {
+    "baseUrl": "https://model.inferx.net/endpoints/v1/chat/completions",
+    "validateUrl": "https://model.inferx.net/endpoints/v1/models",
+    "format": "openai"
   }
 }

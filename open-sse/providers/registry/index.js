@@ -301,6 +301,7 @@ import p305 from "./freebuff.js";
 import p306 from "./typesafe.js";
 import p307 from "./qwen-web.js";
 import p308 from "./pixrouter.js";
+import p309 from "./inferx.js";
 export default [
   p0,
   p1,
@@ -603,4 +604,5 @@ export default [
   p306,
   p307,
   p308,
+  p309,
 ];

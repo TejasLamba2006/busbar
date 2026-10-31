@@ -34,19 +34,21 @@ export async function resolveVisibilityKeys(provider, nodes = null) {
   return keys;
 }
 
-export async function createModelVisibilitySnapshot() {
-  const [disabled, nodes] = await Promise.all([
+export async function createModelVisibilitySnapshot(ownerKeyId = null) {
+  const [disabled, clientDisabled, nodes] = await Promise.all([
     getDisabledModels(),
+    ownerKeyId ? getDisabledModels(ownerKeyId) : Promise.resolve({}),
     getProviderNodes(),
   ]);
-  return { disabled, nodes };
+  return { disabled, clientDisabled, nodes, ownerKeyId };
 }
 
-export async function isModelDisabled(provider, model, snapshot = null) {
-  const state = snapshot || await createModelVisibilitySnapshot();
+export async function isModelDisabled(provider, model, snapshot = null, ownerKeyId = null) {
+  const state = snapshot || await createModelVisibilitySnapshot(ownerKeyId);
   const keys = await resolveVisibilityKeys(provider, state.nodes || []);
   for (const key of keys) {
     if (Array.isArray(state.disabled?.[key]) && state.disabled[key].includes(model)) return true;
+    if (Array.isArray(state.clientDisabled?.[key]) && state.clientDisabled[key].includes(model)) return true;
   }
   return false;
 }
@@ -77,35 +79,36 @@ export function noEnabledComboModelsResponse(comboName) {
   });
 }
 
-export async function enforceModelEnabled(provider, model, snapshot = null) {
-  return await isModelDisabled(provider, model, snapshot)
+export async function enforceModelEnabled(provider, model, snapshot = null, ownerKeyId = null) {
+  return await isModelDisabled(provider, model, snapshot, ownerKeyId)
     ? modelDisabledResponse(provider, model)
     : null;
 }
 
-export async function getDisabledModelIds(provider, snapshot = null) {
-  const state = snapshot || await createModelVisibilitySnapshot();
+export async function getDisabledModelIds(provider, snapshot = null, ownerKeyId = null) {
+  const state = snapshot || await createModelVisibilitySnapshot(ownerKeyId);
   const keys = await resolveVisibilityKeys(provider, state.nodes || []);
   const ids = new Set();
   for (const key of keys) {
     for (const id of state.disabled?.[key] || []) ids.add(id);
+    for (const id of state.clientDisabled?.[key] || []) ids.add(id);
   }
   return [...ids];
 }
 
-export async function disableCanonicalModels(provider, ids) {
+export async function disableCanonicalModels(provider, ids, ownerKeyId = null) {
   const nodes = await getProviderNodes();
   const node = nodes.find((item) => item.id === provider || item.prefix === provider);
-  await disableModels(node?.id || resolveProviderAlias(provider), ids);
+  await disableModels(node?.id || resolveProviderAlias(provider), ids, ownerKeyId);
 }
 
-export async function enableCanonicalModels(provider, ids = []) {
+export async function enableCanonicalModels(provider, ids = [], ownerKeyId = null) {
   const keys = await resolveVisibilityKeys(provider);
-  for (const key of keys) await enableModels(key, ids);
+  for (const key of keys) await enableModels(key, ids, ownerKeyId);
 }
 
-export async function filterEnabledModels(modelStrings, { comboName, resolveCombo, visiting = new Set() } = {}) {
-  const snapshot = await createModelVisibilitySnapshot();
+export async function filterEnabledModels(modelStrings, { comboName, resolveCombo, visiting = new Set(), ownerKeyId = null } = {}) {
+  const snapshot = await createModelVisibilitySnapshot(ownerKeyId);
   const models = [];
   for (const modelString of modelStrings) {
     const slash = modelString.indexOf("/");
@@ -124,6 +127,7 @@ export async function filterEnabledModels(modelStrings, { comboName, resolveComb
         comboName: modelString,
         resolveCombo,
         visiting,
+        ownerKeyId,
       });
       visiting.delete(modelString);
       if (visibleNested.models.length > 0) models.push(modelString);

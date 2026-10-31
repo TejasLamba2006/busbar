@@ -192,6 +192,12 @@ export async function buildModelsList(kindFilter, options = {}) {
   let disabledByAlias = {};
   try {
     disabledByAlias = await getDisabledModels();
+    if (clientKeyId) {
+      const clientDisabled = await getDisabledModels(clientKeyId);
+      for (const [alias, ids] of Object.entries(clientDisabled)) {
+        disabledByAlias[alias] = [...new Set([...(disabledByAlias[alias] || []), ...(ids || [])])];
+      }
+    }
   } catch (e) {
     console.log("Could not fetch disabled models");
   }
@@ -321,7 +327,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
-      const hidden = new Set(await getDisabledModelIds(providerAlias));
+      const hidden = new Set(await getDisabledModelIds(providerAlias, null, clientKeyId));
       if (hidden.has(modelId)) continue;
 
       models.push({
@@ -340,7 +346,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         || getProviderAlias(providerId)
         || staticAlias
       ).trim();
-      const canonicalDisabled = new Set(await getDisabledModelIds(providerId));
+      const canonicalDisabled = new Set(await getDisabledModelIds(providerId, null, clientKeyId));
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
       const enabledModels = conn?.providerSpecificData?.enabledModels;
       const hasExplicitEnabledModels =

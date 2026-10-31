@@ -127,11 +127,13 @@ export async function handleChat(request, clientRawRequest = null) {
   // models. Checked once on the requested target, before bypass, combo expansion
   // and any credential lookup; an allowed combo grants the members it routes to.
   const keyAccess = await getKeyAccessContext(request);
+  const clientKeyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
+  const clientVisibilityOwner = clientKeyRecord?.clientEmail ? clientKeyRecord.id : null;
   const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
   const requestedModelInfo = await getModelInfo(modelStr);
   if (requestedModelInfo.provider) {
-    const disabledResponse = await enforceModelEnabled(requestedModelInfo.provider, requestedModelInfo.model);
+    const disabledResponse = await enforceModelEnabled(requestedModelInfo.provider, requestedModelInfo.model, null, clientVisibilityOwner);
     if (disabledResponse) return disabledResponse;
   }
 
@@ -143,7 +145,7 @@ export async function handleChat(request, clientRawRequest = null) {
     if (route.wasRouted) {
       const routedInfo = await getModelInfo(route.model);
       if (routedInfo.provider) {
-        const disabledResponse = await enforceModelEnabled(routedInfo.provider, routedInfo.model);
+        const disabledResponse = await enforceModelEnabled(routedInfo.provider, routedInfo.model, null, clientVisibilityOwner);
         if (disabledResponse) return disabledResponse;
       }
       log.info("WEBSEARCH", `Routed web_search request from ${modelStr} to ${route.model}`);
@@ -162,7 +164,7 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    const visibleCombo = await filterEnabledModels(comboModels, { comboName: modelStr, resolveCombo: getComboModels });
+    const visibleCombo = await filterEnabledModels(comboModels, { comboName: modelStr, resolveCombo: getComboModels, ownerKeyId: clientVisibilityOwner });
     if (visibleCombo.response) return visibleCombo.response;
     const enabledComboModels = visibleCombo.models;
     // Check for combo-specific strategy first, fallback to global
@@ -170,7 +172,7 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     const augmentedModels = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter(enabledComboModels, requiredCapabilities, settings), enabledComboModels);
-    const visibleAugmented = await filterEnabledModels(augmentedModels, { comboName: modelStr });
+    const visibleAugmented = await filterEnabledModels(augmentedModels, { comboName: modelStr, ownerKeyId: clientVisibilityOwner });
     if (visibleAugmented.response) return visibleAugmented.response;
     const adapterAdded = visibleAugmented.models.filter((m) => !enabledComboModels.includes(m));
 
@@ -228,7 +230,7 @@ export async function handleChat(request, clientRawRequest = null) {
   // Single model request — may still switch to a capacity-adapter model if the
   // target lacks a capability the request needs (e.g. no vision, request has an image).
   const soloAugmented = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings), [modelStr]);
-  const visibleSolo = await filterEnabledModels(soloAugmented, { comboName: modelStr });
+  const visibleSolo = await filterEnabledModels(soloAugmented, { comboName: modelStr, ownerKeyId: clientVisibilityOwner });
   if (visibleSolo.response) return visibleSolo.response;
   if (visibleSolo.models.length > 1) {
     const adapterAdded = visibleSolo.models.filter((m) => m !== modelStr);
@@ -254,13 +256,14 @@ export async function handleChat(request, clientRawRequest = null) {
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
   const clientKeyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
+  const clientVisibilityOwner = clientKeyRecord?.clientEmail ? clientKeyRecord.id : null;
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
-      const visibleCombo = await filterEnabledModels(comboModels, { comboName: modelStr, resolveCombo: getComboModels });
+      const visibleCombo = await filterEnabledModels(comboModels, { comboName: modelStr, resolveCombo: getComboModels, ownerKeyId: clientVisibilityOwner });
       if (visibleCombo.response) return visibleCombo.response;
       const enabledComboModels = visibleCombo.models;
       const chatSettings = await getSettings();
@@ -273,7 +276,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // was made on the outer target; only drop adapter models the key may not call.
       const keyAccess = await getKeyAccessContext(request);
       const augmentedModels = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter(enabledComboModels, requiredCapabilities, chatSettings), enabledComboModels);
-      const visibleAugmented = await filterEnabledModels(augmentedModels, { comboName: modelStr });
+      const visibleAugmented = await filterEnabledModels(augmentedModels, { comboName: modelStr, ownerKeyId: clientVisibilityOwner });
       if (visibleAugmented.response) return visibleAugmented.response;
       const adapterAdded = visibleAugmented.models.filter((m) => !enabledComboModels.includes(m));
 
@@ -335,7 +338,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
-  const disabledResponse = await enforceModelEnabled(provider, model);
+  const disabledResponse = await enforceModelEnabled(provider, model, null, clientVisibilityOwner);
   if (disabledResponse) return disabledResponse;
 
   // Routing shown in the unified "▶" line (client model → provider/model)
