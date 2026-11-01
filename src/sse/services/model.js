@@ -36,6 +36,12 @@ export async function resolveModelAlias(alias) {
  * Get full model info (parse or resolve)
  */
 export async function getModelInfo(modelStr) {
+  // Exact aliases may themselves look like provider/model paths. Resolve them
+  // before parseModel(), otherwise the slash makes the alias unreachable.
+  const aliases = await getModelAliases();
+  const exactAlias = resolveModelAliasFromMap(modelStr, aliases);
+  if (exactAlias) return exactAlias;
+
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
@@ -75,7 +81,7 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
-  return getModelInfoCore(modelStr, getModelAliases);
+  return getModelInfoCore(modelStr, aliases);
 }
 
 /**

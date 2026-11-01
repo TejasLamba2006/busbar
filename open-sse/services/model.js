@@ -92,6 +92,18 @@ export function resolveModelAliasFromMap(alias, aliases) {
  * @param {object|function} aliasesOrGetter - Aliases object or async function to get aliases
  */
 export async function getModelInfoCore(modelStr, aliasesOrGetter) {
+  // Exact user aliases win even when the alias itself contains a slash. Parsing
+  // first makes `vendor/model` aliases unreachable because they look like a
+  // direct provider/model reference.
+  const aliases =
+    typeof aliasesOrGetter === "function"
+      ? await aliasesOrGetter()
+      : aliasesOrGetter;
+  const resolved =
+    resolveModelAliasFromMap(modelStr, aliases) ||
+    resolveModelAliasFromMap(modelStr, BUILTIN_MODEL_ALIASES);
+  if (resolved) return resolved;
+
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
@@ -99,20 +111,6 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
       provider: parsed.provider,
       model: parsed.model,
     };
-  }
-
-  // Get aliases (from object or function)
-  const aliases =
-    typeof aliasesOrGetter === "function"
-      ? await aliasesOrGetter()
-      : aliasesOrGetter;
-
-  // Resolve alias
-  const resolved =
-    resolveModelAliasFromMap(parsed.model, aliases) ||
-    resolveModelAliasFromMap(parsed.model, BUILTIN_MODEL_ALIASES);
-  if (resolved) {
-    return resolved;
   }
 
   // Fallback: infer provider from model name prefix

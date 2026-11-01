@@ -210,7 +210,7 @@ export default function ProviderDetailPage() {
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
-  
+
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
@@ -1223,7 +1223,7 @@ export default function ProviderDetailPage() {
       customModels,
       modelAliases,
       providerAlias: providerStorageAlias,
-      builtInModels: models,
+      builtInModels: allModels,
       type: hasLlmKind ? "llm" : null,
     });
     const providerIsFreeTier = Boolean(FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);

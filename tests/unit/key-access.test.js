@@ -9,7 +9,11 @@ const fx = vi.hoisted(() => ({
     { id: "c2", name: "other", models: ["openai/model-c"] },
   ],
   nodes: [{ id: "openai-compatible-chat-n1", type: "openai-compatible", prefix: "mock" }],
-  aliases: { fast: "openai/model-a", bee: "openai/model-b" },
+  aliases: {
+    fast: "openai/model-a",
+    bee: "openai/model-b",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": "kc/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  },
   keys: {},
 }));
 
@@ -23,6 +27,7 @@ vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => f
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
 
 const engine = await import("../../src/sse/services/keyAccess.js");
+const modelService = await import("../../open-sse/services/model.js");
 const helpers = await import("../../src/shared/utils/keyAccess.js");
 const { keyAccessDeniedMessage, KEY_ACCESS_MAX_ENTRIES } = await import("../../src/shared/constants/keyAccess.js");
 
@@ -46,6 +51,10 @@ beforeEach(() => {
   key("open", { restricted: false, allow: [] });
   key("combo", { restricted: true, allow: ["main"] }); // case differs from combo "Main" on purpose
   key("b", { restricted: true, allow: ["openai/MODEL-B"] });
+  key("nemotron", {
+    restricted: true,
+    allow: ["kc/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"],
+  });
   key("empty", { restricted: true, allow: [] });
   key("cx", { restricted: true, allow: ["cx/gpt-5"] });
   key("node", { restricted: true, allow: ["mock/glm-4"] });
@@ -100,6 +109,16 @@ describe("resolution cannot be used to bypass", () => {
   it("a model alias resolves to its target before matching", async () => {
     expect(await status("sk-b", "fast")).toBe(403); // fast -> openai/model-a
     expect(await status("sk-b", "bee")).toBe(200); // bee -> openai/model-b: same target, same answer
+  });
+  it("resolves slash-containing model aliases before provider/model parsing", async () => {
+    await expect(modelService.getModelInfoCore(
+      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      fx.aliases,
+    )).resolves.toEqual({
+      provider: "kilocode",
+      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    });
+    expect(await status("sk-nemotron", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")).toBe(200);
   });
   it("provider alias and full provider id are one target", async () => {
     expect(await status("sk-cx", "cx/gpt-5")).toBe(200);
