@@ -11,10 +11,23 @@ const MEDIA_ONLY_ALIASES = {
 };
 
 const ALIAS_TO_PROVIDER_ID = { ...MEDIA_ONLY_ALIASES };
+const UNIQUE_SLASH_MODEL_TO_PROVIDER = new Map();
+const AMBIGUOUS_SLASH_MODELS = new Set();
 for (const entry of REGISTRY) {
   ALIAS_TO_PROVIDER_ID[entry.id] = entry.id;
   if (entry.alias) ALIAS_TO_PROVIDER_ID[entry.alias] = entry.id;
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
+  for (const m of entry.models || []) {
+    if (!m?.id || !m.id.includes("/")) continue;
+    const key = m.id.toLowerCase();
+    const prev = UNIQUE_SLASH_MODEL_TO_PROVIDER.get(key);
+    if (prev && prev !== entry.id) {
+      AMBIGUOUS_SLASH_MODELS.add(key);
+      UNIQUE_SLASH_MODEL_TO_PROVIDER.delete(key);
+    } else if (!AMBIGUOUS_SLASH_MODELS.has(key)) {
+      UNIQUE_SLASH_MODEL_TO_PROVIDER.set(key, entry.id);
+    }
+  }
 }
 
 const BUILTIN_MODEL_ALIASES = {
@@ -40,6 +53,14 @@ export function parseModel(modelStr) {
   if (modelStr.includes("/")) {
     const firstSlash = modelStr.indexOf("/");
     const providerOrAlias = modelStr.slice(0, firstSlash);
+    // If the prefix is not a known provider/alias, check if the full slash-prefixed
+    // string is a unique registry model ID (e.g. "aion-labs/aion-3.5-mini" -> aion).
+    if (!ALIAS_TO_PROVIDER_ID[providerOrAlias]) {
+      const ownerProvider = UNIQUE_SLASH_MODEL_TO_PROVIDER.get(modelStr.toLowerCase());
+      if (ownerProvider) {
+        return { provider: ownerProvider, model: modelStr, isAlias: false, providerAlias: ownerProvider };
+      }
+    }
     const model = modelStr.slice(firstSlash + 1);
     const provider = resolveProviderAlias(providerOrAlias);
     return { provider, model, isAlias: false, providerAlias: providerOrAlias };

@@ -53,7 +53,7 @@ beforeEach(() => {
   key("b", { restricted: true, allow: ["openai/MODEL-B"] });
   key("nemotron", {
     restricted: true,
-    allow: ["kc/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"],
+    allow: ["kc/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "aion/aion-labs/aion-3.5-mini"],
   });
   key("empty", { restricted: true, allow: [] });
   key("cx", { restricted: true, allow: ["cx/gpt-5"] });
@@ -119,6 +119,12 @@ describe("resolution cannot be used to bypass", () => {
       model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     });
     expect(await status("sk-nemotron", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")).toBe(200);
+    // Unprefixed slash-model IDs (e.g. aion-labs/aion-3.5-mini when allow-list has aion/aion-labs/aion-3.5-mini)
+    await expect(modelService.getModelInfoCore("aion-labs/aion-3.5-mini", {})).resolves.toEqual({
+      provider: "aion",
+      model: "aion-labs/aion-3.5-mini",
+    });
+    expect(await status("sk-nemotron", "aion-labs/aion-3.5-mini")).toBe(200);
   });
   it("provider alias and full provider id are one target", async () => {
     expect(await status("sk-cx", "cx/gpt-5")).toBe(200);

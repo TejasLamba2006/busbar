@@ -129,6 +129,7 @@ async function getAllowSets(ctx) {
   const comboNames = new Set((await getCombos()).map((c) => lower(c.name)));
   const combos = new Set();
   const models = new Set();
+  const suffixModels = new Set();
   const providers = new Set();
   const wildcardProviders = new Set();
   for (const entry of ctx.allow) {
@@ -153,9 +154,14 @@ async function getAllowSets(ctx) {
     if (info?.provider && (info.model === "search" || info.model === "fetch")) {
       providers.add(lower(info.provider));
     }
-    if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
+    if (info?.provider && info.model) {
+      models.add(canonicalModel(info.provider, info.model));
+      if (typeof info.model === "string" && info.model.includes("/")) {
+        suffixModels.add(lower(info.model));
+      }
+    }
   }
-  ctx._sets = { combos, models, providers, wildcardProviders };
+  ctx._sets = { combos, models, suffixModels, providers, wildcardProviders };
   return ctx._sets;
 }
 
@@ -163,7 +169,9 @@ function matchesAllowedModel(sets, provider, model) {
   if (!provider || !model) return false;
   const p = lower(provider);
   if (sets.wildcardProviders.has(p) || sets.providers.has(p)) return true;
-  if (sets.models.has(canonicalModel(provider, model))) return true;
+  const canonical = canonicalModel(provider, model);
+  if (sets.models.has(canonical)) return true;
+  if (sets.suffixModels.has(canonical)) return true;
   // TTS requests often send "provider/tts-model/voice" while the allow list stores "provider/tts-model"
   if (typeof model === "string" && model.includes("/")) {
     const baseModel = model.slice(0, model.indexOf("/"));
