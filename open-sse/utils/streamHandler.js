@@ -140,6 +140,11 @@ export function createDisconnectAwareStream(transformStream, streamController, o
   return new ReadableStream({
     start(controller) {
       if (keepaliveIntervalMs > 0) {
+        try {
+          controller.enqueue(KEEPALIVE_BYTES);
+        } catch {
+          return;
+        }
         keepaliveTimer = setInterval(() => {
           if (!streamController.isConnected()) {
             stopKeepalive();

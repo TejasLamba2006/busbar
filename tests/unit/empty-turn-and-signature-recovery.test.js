@@ -76,6 +76,27 @@ describe("probeStreamingResponseForEmptyTurn", () => {
     expect(fullText).toContain("thinking...");
     expect(fullText).toContain("final answer");
   });
+
+  it("releases a slow-prefill stream with zero initial bytes after maxMs so Cloudflare never 524s", async () => {
+    const enc = new TextEncoder();
+    const res = new Response(
+      new ReadableStream({
+        start(c) {
+          setTimeout(() => {
+            c.enqueue(enc.encode('data: {"candidates":[{"content":{"parts":[{"text":"late answer"}]}}]}\n\n'));
+            c.close();
+          }, 250);
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } }
+    );
+    const t0 = Date.now();
+    const verdict = await probeStreamingResponseForEmptyTurn(res, 128_000, 60);
+    expect(verdict.empty).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(200);
+    const fullText = await res.text();
+    expect(fullText).toContain("late answer");
+  });
 });
 
 describe("Anthropic thinking-signature one-shot recovery", () => {

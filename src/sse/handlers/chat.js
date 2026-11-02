@@ -39,6 +39,7 @@ import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../s
 import { enforceModelEnabled, filterEnabledModels } from "../services/modelVisibility.js";
 import { syncClaudeExtraUsageStateAfterRequest } from "../services/claudeExtraUsage.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { withEarlyCommit } from "open-sse/utils/earlyCommitStream.js";
 
 /**
  * Handle chat completion request
@@ -46,6 +47,14 @@ import { resolveSmartChoice } from "../services/systemoneRouter.js";
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const ctx = {};
+  const work = handleChatInner(request, clientRawRequest, ctx);
+  let endpoint = "";
+  try { endpoint = new URL(request.url).pathname; } catch { /* keep empty */ }
+  return withEarlyCommit(work, ctx, endpoint);
+}
+
+async function handleChatInner(request, clientRawRequest = null, ctx = {}) {
   let body;
   try {
     const encoding = (request.headers.get("content-encoding") || "").toLowerCase().trim();
@@ -62,6 +71,7 @@ export async function handleChat(request, clientRawRequest = null) {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
+  ctx.stream = body?.stream === true;
 
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {

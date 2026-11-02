@@ -165,13 +165,13 @@ export async function probeStreamingResponseForEmptyTurn(response, maxBytes = EM
   let consumed = 0;
   let sawAnyData = false;
   let streamError = null;
-  let firstDataAt = 0;
+  const startedAt = Date.now();
 
   try {
     for (;;) {
       let readResult;
-      if (sawAnyData && maxMs > 0) {
-        const remaining = maxMs - (Date.now() - firstDataAt);
+      if (maxMs > 0) {
+        const remaining = maxMs - (Date.now() - startedAt);
         if (remaining <= 0) {
           void reader.cancel().catch(() => {});
           return { empty: false };
@@ -191,10 +191,9 @@ export async function probeStreamingResponseForEmptyTurn(response, maxBytes = EM
       const { done, value } = readResult;
       if (done) break;
       if (!value || value.byteLength === 0) continue;
-      if (!sawAnyData) firstDataAt = Date.now();
       sawAnyData = true;
       total += value.byteLength;
-      if (total > maxBytes || (maxMs > 0 && Date.now() - firstDataAt >= maxMs)) {
+      if (total > maxBytes || (maxMs > 0 && Date.now() - startedAt >= maxMs)) {
         void reader.cancel().catch(() => {});
         return { empty: false };
       }

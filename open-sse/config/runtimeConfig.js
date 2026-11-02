@@ -69,6 +69,11 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 90 * 1
 // long-running reasoning streams with 524 during silent thinking stretches.
 export const STREAM_KEEPALIVE_INTERVAL_MS = envMs("STREAM_KEEPALIVE_INTERVAL_MS", 15 * 1000);
 
+// If a streaming request has produced no response after this long, commit a 200 SSE response
+// and send keepalives so Cloudflare does not 524 (100-120s origin limit) on huge prompts.
+// 0 disables. Env: STREAM_EARLY_COMMIT_MS.
+export const STREAM_EARLY_COMMIT_MS = envMs("STREAM_EARLY_COMMIT_MS", 20 * 1000);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
