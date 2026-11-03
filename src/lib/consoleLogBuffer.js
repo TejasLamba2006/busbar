@@ -22,17 +22,26 @@ if (!state.emitter) {
 }
 
 if (!state.pendingLines) state.pendingLines = [];
+if (!state.pendingBumps) state.pendingBumps = new Map();
 if (!state.flushTimer) state.flushTimer = null;
+if (!state.nextId) state.nextId = 1;
+// Drop entries from a stale pre-structured buffer (hot reload)
+if (state.logs.length && typeof state.logs[0] === "string") state.logs = [];
 
 const FLUSH_INTERVAL_MS = 100;
 const MAX_BATCH_LINES = 50;
 
 function flushPendingLines() {
   state.flushTimer = null;
-  if (!state.pendingLines.length) return;
-
-  const lines = state.pendingLines.splice(0, state.pendingLines.length);
-  state.emitter.emit("lines", lines);
+  if (state.pendingLines.length) {
+    const lines = state.pendingLines.splice(0, state.pendingLines.length);
+    state.emitter.emit("lines", lines);
+  }
+  if (state.pendingBumps.size) {
+    const bumps = [...state.pendingBumps.values()];
+    state.pendingBumps.clear();
+    state.emitter.emit("bump", bumps);
+  }
 }
 
 function scheduleFlush() {
@@ -62,13 +71,97 @@ function formatArg(arg) {
   }
 }
 
-function appendLine(line) {
-  state.logs.push(line);
+const MAX_MSG_CHARS = 4000;
+const REQ_DOTS = ["🟢", "🔵", "🟣", "🟡", "🟠", "🔴", "⚪", "🟤"];
+// Leading emoji -> [level, fixed tag|null]; null tag means "read [TAG] from message"
+const EMOJI_LINES = [
+  ["ℹ", "info", null],
+  ["⚠", "warn", null],
+  ["❌", "error", null],
+  ["🔍", "debug", null],
+  ["🌊", "info", null],
+  ["📥", "info", "REQ"],
+  ["📤", "info", "RES"],
+  ["💥", "error", "RES"],
+];
+
+function fallbackLevel(level) {
+  return level === "warn" || level === "error" ? level : "info";
+}
+
+// "[HH:MM:SS]" prefix length (incl. trailing space) or 0. Linear scan, no regex.
+function timePrefixLen(t) {
+  if (t.charCodeAt(0) !== 91) return 0;
+  const end = t.indexOf("]", 1);
+  if (end < 5 || end > 11) return 0;
+  for (let i = 1; i < end; i++) {
+    const c = t.charCodeAt(i);
+    if (c !== 58 && (c < 48 || c > 57)) return 0;
+  }
+  return t.charCodeAt(end + 1) === 32 ? end + 2 : end + 1;
+}
+
+// Pure: (console method, ANSI-stripped text) -> { level, tag, msg }
+export function parseConsoleLine(level, text) {
+  let level2 = fallbackLevel(level);
+  let tag = null;
+  let msg = String(text).trim();
+  const p = timePrefixLen(msg);
+  if (p) {
+    let rest = msg.slice(p).trimStart();
+    const dot = REQ_DOTS.find((d) => rest.startsWith(d));
+    if (dot) {
+      // line()/errorLine(): "<dot> <symbol> message"
+      const after = rest.slice(dot.length).trimStart();
+      const sp = after.indexOf(" ");
+      const sym = sp === -1 ? after : after.slice(0, sp);
+      level2 = sym === "✗" ? "error" : sym === "⚡" ? "warn" : "info";
+      tag = "REQ";
+      msg = sp === -1 ? "" : after.slice(sp + 1).trimStart();
+    } else {
+      const hit = EMOJI_LINES.find((e) => rest.startsWith(e[0]));
+      if (hit) {
+        level2 = hit[1];
+        tag = hit[2];
+        rest = rest.slice(hit[0].length);
+        if (rest.charCodeAt(0) === 0xfe0f) rest = rest.slice(1);
+        rest = rest.trimStart();
+        if (!tag && rest.charCodeAt(0) === 91) {
+          const end = rest.indexOf("]");
+          if (end > 1) {
+            tag = rest.slice(1, end);
+            rest = rest.slice(end + 1).trimStart();
+          }
+        }
+        msg = rest;
+      }
+    }
+  }
+  if (msg.length > MAX_MSG_CHARS) msg = msg.slice(0, MAX_MSG_CHARS) + " …(truncated)";
+  return { level: level2, tag, msg };
+}
+
+function appendLine(level, text) {
+  const parsed = parseConsoleLine(level, text);
+  const now = Date.now();
+  const last = state.logs[state.logs.length - 1];
+  if (last && last.level === parsed.level && last.tag === parsed.tag && last.msg === parsed.msg) {
+    last.count++;
+    last.ts = now;
+    // Entry not yet sent: the pending "lines" payload already carries the new count/ts
+    if (!state.pendingLines.includes(last)) {
+      state.pendingBumps.set(last.id, { id: last.id, count: last.count, ts: now });
+    }
+    scheduleFlush();
+    return;
+  }
+  const entry = { id: state.nextId++, ts: now, level: parsed.level, tag: parsed.tag, msg: parsed.msg, count: 1 };
+  state.logs.push(entry);
   const maxLines = CONSOLE_LOG_CONFIG.maxLines;
   if (state.logs.length > maxLines) {
-    state.logs = state.logs.slice(-maxLines);
+    state.logs.splice(0, state.logs.length - maxLines);
   }
-  state.pendingLines.push(line);
+  state.pendingLines.push(entry);
   if (state.pendingLines.length >= MAX_BATCH_LINES) {
     if (state.flushTimer) {
       clearTimeout(state.flushTimer);
@@ -86,7 +179,7 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      appendLine(toLogLine(level, args));
+      appendLine(level, toLogLine(level, args));
       state.originals[level](...args);
     };
   }
@@ -100,6 +193,8 @@ export function getConsoleLogs() {
 
 export function clearConsoleLogs() {
   state.logs = [];
+  state.pendingLines.length = 0;
+  state.pendingBumps.clear();
   state.emitter.emit("clear");
 }
 
