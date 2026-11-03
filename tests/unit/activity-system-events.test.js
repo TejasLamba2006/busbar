@@ -25,3 +25,12 @@ describe("system activity events", () => {
     expect(JSON.stringify(saved)).not.toContain("PLANTEDSECRET123456");
   });
 });
+
+describe("briefError", () => {
+  it("pulls the human message out of a provider JSON blob", async () => {
+    const { briefError } = await import("../../src/lib/activity.js");
+    const raw = '[groq/x] [404]: {"error":{"message":"The model `x` does not exist.","type":"invalid_request_error"}}';
+    expect(briefError(raw)).toBe("The model `x` does not exist.");
+    expect(briefError("plain failure")).toBe("plain failure");
+  });
+});

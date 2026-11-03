@@ -407,7 +407,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   import("@/lib/activity.js").then((m) => m.recordSystemActivity({
     type: "account.cooldown",
     target: `${provider || "?"}/${connName}`,
-    summary: `${provider || "account"} "${connName}" paused${model ? " for " + model : ""} for ${Math.round(cooldownMs / 1000)}s [${status}]: ${reason.slice(0, 120)}`,
+    summary: `${provider || "account"} "${connName}" paused${model ? " for " + model : ""} for ${Math.round(cooldownMs / 1000)}s [${status}]: ${m.briefError(reason, 120)}`,
     meta: { status, provider: provider || null, model: model || null, cooldownSec: Math.round(cooldownMs / 1000) },
     dedupeKey: `ac|${connectionId}|${model || ""}|${status}`,
   })).catch(() => {});

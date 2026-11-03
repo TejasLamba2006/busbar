@@ -209,9 +209,9 @@ export function emitRequestError(entry) {
     import("@/lib/activity.js").then((m) => m.recordSystemActivity({
       type: "request.error",
       target: [event.provider, event.model].filter(Boolean).join("/") || null,
-      summary: `${event.provider || "upstream"}${event.model ? "/" + event.model : ""} failed${event.status ? " [" + event.status + "]" : ""}${event.message ? ": " + event.message.slice(0, 160) : ""}`,
+      summary: `${event.provider || "upstream"}${event.model ? "/" + event.model : ""} failed${event.status ? " [" + event.status + "]" : ""}${event.message ? ": " + m.briefError(event.message) : ""}`,
       meta: { status: event.status, provider: event.provider || null, model: event.model || null },
-      dedupeKey: `re|${event.provider}|${event.model}|${event.status}`,
+      dedupeKey: `re|${event.provider}|${event.model}`,
     })).catch(() => {});
   } catch { /* never block the request path */ }
 }

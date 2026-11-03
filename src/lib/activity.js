@@ -31,6 +31,12 @@ export function logActivity(type, summary, target = null, meta = null) {
 const recentSystem = new Map();
 const SECRET_RE = /\b(?:sk|pk|rk|ak|xai|gsk|AIza|ghp|gho|ABSK)[-_A-Za-z0-9]{8,}|Bearer\s+[A-Za-z0-9._~+\/=-]{8,}|(?:key|token|secret)["']?\s*[:=]\s*["']?[A-Za-z0-9._-]{8,}/gi;
 export const maskSecrets = (s) => String(s ?? "").replace(SECRET_RE, "[redacted]");
+// Provider errors arrive as raw JSON blobs; show just the human message, one line.
+export const briefError = (text, max = 140) => {
+  const s = String(text ?? "");
+  const m = s.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  return (m ? m[1].replace(/\\"/g, '"') : s).replace(/\s+/g, " ").trim().slice(0, max);
+};
 
 export function recordSystemActivity({ type, summary, target = null, meta = null, dedupeKey, windowMs = 60000 }) {
   try {

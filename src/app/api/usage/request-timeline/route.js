@@ -39,6 +39,12 @@ export async function GET(request) {
       raw = db.all(SQL_BASIC, args);
     }
 
+    // Failed requests never reach usageHistory; surface them from the activity log as zero-width red ticks.
+    let errs = [];
+    try {
+      errs = db.all(`SELECT id, ts, meta FROM activityLog WHERE type = 'request.error' AND ts >= ? ORDER BY ts DESC LIMIT 300`, [sinceMs]);
+    } catch { /* table may not exist yet on a fresh upgrade */ }
+
     // usageHistory.timestamp is the END time (written when the request completes), so start = end - total.
     const rows = raw.map((r) => {
       const end = Date.parse(r.timestamp);
@@ -58,6 +64,16 @@ export async function GET(request) {
         completionTokens: num(r.ct),
       };
     }).filter((r) => Number.isFinite(r.ts));
+
+    for (const e of errs) {
+      let meta = {};
+      try { meta = JSON.parse(e.meta || "{}") || {}; } catch { /* keep empty */ }
+      rows.push({
+        id: `e${e.id}`, ts: Number(e.ts), durationMs: 0, ttftMs: null, status: "error",
+        provider: meta.provider || null, model: meta.model || null, connectionId: null,
+        promptTokens: 0, completionTokens: 0,
+      });
+    }
 
     return NextResponse.json({ rows, now });
   } catch (error) {
