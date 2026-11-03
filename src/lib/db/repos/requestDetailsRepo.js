@@ -68,7 +68,7 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
-export const __test__ = { sanitizeHeaders };
+export const __test__ = { sanitizeHeaders, truncateField };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -77,12 +77,31 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
+// Keep the payload's structure (roles, tool calls, params) and trim only long strings.
+function shrinkStrings(value, limit) {
+  if (typeof value === "string") return value.length > limit ? `${value.slice(0, limit)}… [+${value.length - limit} chars]` : value;
+  if (Array.isArray(value)) return value.map((v) => shrinkStrings(v, limit));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = shrinkStrings(value[k], limit);
+    return out;
+  }
+  return value;
+}
+
 function truncateField(obj, maxSize) {
   const str = JSON.stringify(obj || {});
-  if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+  if (str.length <= maxSize) return obj || {};
+  // An all-or-nothing cap made agent prompts (100KB+ of system text) unreadable; shrink text first.
+  if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+    for (const limit of [4000, 1500, 500, 160]) {
+      const shrunk = shrinkStrings(obj, limit);
+      if (JSON.stringify(shrunk).length + 80 <= maxSize) {
+        return { ...shrunk, _shrunk: { originalSize: str.length, stringLimit: limit } };
+      }
+    }
   }
-  return obj || {};
+  return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
 }
 
 async function flushToDatabase() {

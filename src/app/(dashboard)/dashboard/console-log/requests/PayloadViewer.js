@@ -19,6 +19,16 @@ const pretty = (v) => {
   return JSON.stringify(v, null, 2);
 };
 
+function ShrunkNote({ value, maxJsonKB }) {
+  const s = value && typeof value === "object" ? value._shrunk : null;
+  if (!s) return null;
+  return (
+    <div className="rounded-[10px] border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-300">
+      Long text was trimmed to {s.stringLimit} characters per field to fit the {maxJsonKB ?? "?"} KB cap (original {fmtSize(s.originalSize)}). Raise the cap in the logging settings to keep more.
+    </div>
+  );
+}
+
 function TruncatedNote({ value, maxJsonKB }) {
   const size = typeof value._originalSize === "number" ? fmtSize(value._originalSize) : "unknown size";
   return (
@@ -70,6 +80,7 @@ function JsonView({ value, maxJsonKB }) {
   if (isTruncated(value)) return <TruncatedNote value={value} maxJsonKB={maxJsonKB} />;
   return (
     <div className="flex flex-col gap-2">
+      <ShrunkNote value={value} maxJsonKB={maxJsonKB} />
       <div className="flex flex-wrap items-center gap-2">
         {canSearch && (
           <input
@@ -163,6 +174,7 @@ function Messages({ detail, maxJsonKB }) {
   const hasOut = res && !isTruncated(res) && (res.content || res.thinking || res.tool_calls?.length);
   return (
     <div className="flex flex-col gap-2">
+      <ShrunkNote value={req} maxJsonKB={maxJsonKB} />
       {msgs.map((m, i) => (
         <Block key={i} role={m?.role || "unknown"} content={m?.content} toolCalls={m?.tool_calls} />
       ))}

@@ -106,3 +106,15 @@ describe("request-log API", () => {
     } finally { delete process.env.ENABLE_REQUEST_LOGS; }
   });
 });
+
+describe("payload size cap keeps structure", () => {
+  it("shrinks long strings instead of dropping the whole payload", async () => {
+    const { __test__ } = await import("../../src/lib/db/repos/requestDetailsRepo.js");
+    const big = { messages: [{ role: "system", content: "x".repeat(120_000) }, { role: "user", content: "hello" }], model: "m" };
+    const out = __test__.truncateField(big, 20 * 1024);
+    expect(out._truncated).toBeUndefined();
+    expect(out.messages[1]).toEqual({ role: "user", content: "hello" });
+    expect(out.messages[0].content).toContain("chars]");
+    expect(out._shrunk.originalSize).toBeGreaterThan(120_000);
+  });
+});

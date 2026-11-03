@@ -291,7 +291,7 @@ export default function RequestLogClient() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-text-main">Request logging is off. Turn it on to capture prompts and responses.</div>
               <div className="text-xs text-text-muted">
-                Stores full prompts and responses (up to {obs.maxJsonKB} KB per payload) on this server, including requests from client accounts.
+                Stores full prompts and responses (up to 64 KB per payload; long text is trimmed to fit) on this server, including requests from client accounts.
               </div>
               {locked && <div className="text-xs text-yellow-400">Set by environment; cannot be changed here.</div>}
             </div>
