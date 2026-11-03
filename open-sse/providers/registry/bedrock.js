@@ -49,6 +49,12 @@ export default {
   // profiles an account has ACTIVE varies by account and region, so any id is allowed through.
   passthroughModels: true,
   models: [
+    { id: "global.anthropic.claude-opus-4-6-v1", name: "Claude Opus 4.6 (Global)" },
+    { id: "global.anthropic.claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Global)" },
+    { id: "global.anthropic.claude-opus-4-5-20251101-v1:0", name: "Claude Opus 4.5 (Global)" },
+    { id: "global.anthropic.claude-sonnet-4-5-20250929-v1:0", name: "Claude Sonnet 4.5 (Global)" },
+    { id: "global.anthropic.claude-haiku-4-5-20251001-v1:0", name: "Claude Haiku 4.5 (Global)" },
+    { id: "in.anthropic.claude-haiku-4-5-20251001-v1:0", name: "Claude Haiku 4.5 (IN)" },
     { id: "us.anthropic.claude-opus-5", name: "Claude Opus 5" },
     { id: "us.anthropic.claude-sonnet-5", name: "Claude Sonnet 5" },
     { id: "us.anthropic.claude-fable-5", name: "Claude Fable 5" },

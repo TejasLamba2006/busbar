@@ -15,6 +15,7 @@ export const AWS_SIGV4 = {
 export const AWS_CREDENTIAL_MODE = {
   STATIC: "static",
   PROFILE: "profile",
+  BEARER: "bearer",
 };
 
 // Re-resolve a temporary credential this far before it actually expires, so an in-flight
@@ -72,12 +73,12 @@ export const BEDROCK = {
   // was already paid for. Matching the family rejects those upfront instead.
   modelFamilyPatterns: {
     claude: /(^|[./])anthropic\./,
-    openai: /(^|[./])xai\./,
+    openai: /(^|[./])(xai|moonshotai|openai|zai)\./,
   },
   // Human-readable hint per family, used in the rejection message.
   modelFamilyHints: {
     claude: 'an Anthropic model, e.g. "us.anthropic.claude-sonnet-4-5-20250929-v1:0"',
-    openai: 'an xAI model, e.g. "us.xai.grok-4.6"',
+    openai: 'an OpenAI-compatible Bedrock model, e.g. "us.xai.grok-4.6" or "in.moonshotai.kimi-k3"',
   },
   // Anthropic closes a well-formed stream with this event. Tracking it is what lets us tell a
   // finished answer from an upstream that hung up cleanly halfway through one.

@@ -55,6 +55,22 @@ describe("AWS credential mode detection", () => {
       }),
     ).toBe(AWS_CREDENTIAL_MODE.PROFILE);
   });
+
+  it("detects ABSK... Bedrock API keys as bearer mode and resolves bearerToken + BEDROCK_REGION", async () => {
+    const conn = {
+      apiKey: "ABSKQmVkcm9ja0FQSUtleS10ZXN0",
+      providerSpecificData: { region: "ap-south-2" },
+    };
+    expect(detectCredentialMode(conn)).toBe(AWS_CREDENTIAL_MODE.BEARER);
+    const resolved = await resolveAwsCredentials(conn);
+    expect(resolved).toEqual({
+      bearerToken: "ABSKQmVkcm9ja0FQSUtleS10ZXN0",
+      region: "ap-south-2",
+      mode: AWS_CREDENTIAL_MODE.BEARER,
+      expiresAt: null,
+    });
+    expect(resolveRegion({}, { BEDROCK_REGION: "ap-south-2" })).toBe("ap-south-2");
+  });
 });
 
 describe("AWS region resolution", () => {

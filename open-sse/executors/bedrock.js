@@ -113,15 +113,20 @@ export class BedrockExecutor extends BaseExecutor {
 
     // Content-Length is deliberately not signed: fetch sets it itself, and signing a value the
     // runtime may normalise differently is a needless SignatureDoesNotMatch risk.
-    const headers = signAwsRequest({
-      method: "POST",
-      url,
-      headers: this.buildHeaders(credentials, stream),
-      body: payload,
-      region: resolved.region,
-      service: BEDROCK.service,
-      credentials: resolved,
-    });
+    const headers = resolved.bearerToken
+      ? {
+          ...this.buildHeaders(credentials, stream),
+          Authorization: `Bearer ${resolved.bearerToken}`,
+        }
+      : signAwsRequest({
+          method: "POST",
+          url,
+          headers: this.buildHeaders(credentials, stream),
+          body: payload,
+          region: resolved.region,
+          service: BEDROCK.service,
+          credentials: resolved,
+        });
 
     const connectCtrl = new AbortController();
     const connectTimer = setTimeout(
@@ -416,9 +421,12 @@ export class BedrockExecutor extends BaseExecutor {
 
 /** Copy of signed headers that is safe to write to a request log. */
 function redactSignedHeaders(headers) {
+  const auth = headers.Authorization || "";
   const redacted = {
     ...headers,
-    Authorization: headers.Authorization.replace(/Signature=[0-9a-f]+/, "Signature=<redacted>"),
+    Authorization: auth.startsWith("Bearer ")
+      ? "Bearer <redacted>"
+      : auth.replace(/Signature=[0-9a-f]+/, "Signature=<redacted>"),
   };
   if (redacted[AWS_SIGV4.securityTokenHeader]) {
     redacted[AWS_SIGV4.securityTokenHeader] = "<redacted>";
@@ -444,14 +452,16 @@ export async function probeBedrockCredentials(credentials, fetchFn) {
 
   // resolveAwsCredentials validated the region, so it is safe in the hostname.
   const url = `https://bedrock.${resolved.region}.amazonaws.com/${BEDROCK.probePath}`;
-  const headers = signAwsRequest({
-    method: "GET",
-    url,
-    headers: { Accept: "application/json" },
-    region: resolved.region,
-    service: BEDROCK.service,
-    credentials: resolved,
-  });
+  const headers = resolved.bearerToken
+    ? { Accept: "application/json", Authorization: `Bearer ${resolved.bearerToken}` }
+    : signAwsRequest({
+        method: "GET",
+        url,
+        headers: { Accept: "application/json" },
+        region: resolved.region,
+        service: BEDROCK.service,
+        credentials: resolved,
+      });
   const probeCtrl = new AbortController();
   const probeTimer = setTimeout(
     () => probeCtrl.abort(new Error("AWS credential probe timed out")),

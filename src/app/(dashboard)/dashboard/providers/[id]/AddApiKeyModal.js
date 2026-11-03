@@ -120,8 +120,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const apiKeySatisfied = () => {
     const psd = buildProviderSpecificData();
     if (apiKeyOptionalWith && psd?.[apiKeyOptionalWith]) return true;
-    // AWS static keys are a pair: a secret alone saves a connection that can never sign.
-    if (usesAwsCredentialForm) return !!formData.apiKey && !!psd?.accessKeyId;
+    // AWS Bedrock accepts either a standalone bearer token (ABSK...) or a static key + accessKeyId pair.
+    if (usesAwsCredentialForm) return !!formData.apiKey;
     return !!formData.apiKey;
   };
 

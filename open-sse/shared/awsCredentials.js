@@ -41,9 +41,13 @@ export function clearAwsCredentialCache() {
  * Which mode a connection is configured for. A named profile wins over stray static keys,
  * because a user who filled in a profile meant to use it.
  */
-export function detectCredentialMode(credentials) {
+export function detectCredentialMode(credentials, env = process.env) {
   const psd = credentials?.providerSpecificData || {};
   if (psd.profile) return AWS_CREDENTIAL_MODE.PROFILE;
+  const apiKey = typeof credentials?.apiKey === "string" ? credentials.apiKey.trim() : "";
+  if (psd.bearerToken || apiKey.startsWith("ABSK") || (!apiKey && !psd.accessKeyId && env?.AWS_BEARER_TOKEN_BEDROCK)) {
+    return AWS_CREDENTIAL_MODE.BEARER;
+  }
   return AWS_CREDENTIAL_MODE.STATIC;
 }
 
@@ -62,6 +66,7 @@ export function resolveRegion(credentials, env = process.env) {
   // otherwise reads as a dashboard problem and sends them looking in the wrong place.
   const candidates = [
     [credentials?.providerSpecificData?.region, "providerSpecificData.region"],
+    [env.BEDROCK_REGION, "the BEDROCK_REGION environment variable"],
     [env.AWS_REGION, "the AWS_REGION environment variable"],
     [env.AWS_DEFAULT_REGION, "the AWS_DEFAULT_REGION environment variable"],
     [BEDROCK.defaultRegion, "the built-in default"],
@@ -248,6 +253,20 @@ export async function resolveAwsCredentials(
   // Resolved per call, never cached, so two connections on one profile cannot inherit each
   // other's region and sign with the wrong credential scope.
   const region = resolveRegion(credentials);
+
+  if (mode === AWS_CREDENTIAL_MODE.BEARER) {
+    const psd = credentials?.providerSpecificData || {};
+    const bearerToken = (psd.bearerToken || credentials?.apiKey || process.env.AWS_BEARER_TOKEN_BEDROCK || "").trim();
+    if (!bearerToken) {
+      throw new Error("Bedrock bearer token is empty.");
+    }
+    return {
+      bearerToken,
+      region,
+      mode,
+      expiresAt: null,
+    };
+  }
 
   if (mode === AWS_CREDENTIAL_MODE.STATIC) {
     // Deliberately uncached: this does no I/O, so a cache bought nothing while making a

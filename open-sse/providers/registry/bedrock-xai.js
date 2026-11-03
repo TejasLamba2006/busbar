@@ -46,6 +46,8 @@ export default {
   models: [
     { id: "us.xai.grok-4.6", name: "Grok 4.6" },
     { id: "global.xai.grok-4.6", name: "Grok 4.6 (global)" },
+    { id: "in.moonshotai.kimi-k3", name: "Kimi K3 (IN)" },
+    { id: "global.moonshotai.kimi-k3", name: "Kimi K3 (Global)" },
   ],
   hasProviderSpecificData: true,
 };
