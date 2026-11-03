@@ -222,3 +222,56 @@ function ensureShutdownHandler() {
 }
 
 ensureShutdownHandler();
+
+// --- Request-log (list view) helpers ---
+export async function getObservabilityConfigPublic() {
+  const c = await getObservabilityConfig();
+  return { enabled: c.enabled, maxRecords: c.maxRecords, maxJsonKB: Math.round(c.maxJsonSize / 1024), lockedByEnv: process.env.ENABLE_REQUEST_LOGS !== undefined };
+}
+
+export function resetObservabilityConfigCache() { cachedConfig = null; cachedConfigTs = 0; }
+
+export async function countRequestDetails() {
+  const db = await getAdapter();
+  return db.get(`SELECT COUNT(*) as c FROM requestDetails`)?.c || 0;
+}
+
+export async function clearRequestDetails() {
+  const db = await getAdapter();
+  const n = db.get(`SELECT COUNT(*) as c FROM requestDetails`)?.c || 0;
+  db.run(`DELETE FROM requestDetails`);
+  return n;
+}
+
+const likeEsc = (s) => `%${String(s).replace(/[\\%_]/g, "\\$&")}%`;
+
+// List rows via json_extract; never selects payload blobs except request.messages for the page's rows (preview only, dropped in route).
+export async function listRequestLogRows({ page = 1, pageSize = 50, provider, model, status, q } = {}) {
+  const db = await getAdapter();
+  const conds = [];
+  const params = [];
+  if (provider) { conds.push("provider = ?"); params.push(provider); }
+  if (model) { conds.push("model = ?"); params.push(model); }
+  if (status) { conds.push("status = ?"); params.push(status); }
+  if (q) {
+    conds.push("(provider LIKE ? ESCAPE '\\' OR model LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\')");
+    const l = likeEsc(q); params.push(l, l, l);
+  }
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const totalItems = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params)?.c || 0;
+  const rows = db.all(
+    `SELECT id, timestamp, provider, model, connectionId, status,
+      json_extract(data,'$.latency.total') AS total,
+      json_extract(data,'$.latency.ttft') AS ttft,
+      json_extract(data,'$.tokens.prompt_tokens') AS promptTokens,
+      json_extract(data,'$.tokens.completion_tokens') AS completionTokens,
+      json_extract(data,'$.tokens.cached_tokens') AS cachedTokens,
+      json_type(data,'$.request') AS reqType,
+      json_type(data,'$.request.messages') AS msgType,
+      json_extract(data,'$.request._truncated') AS reqTrunc,
+      json_extract(data,'$.request.messages') AS messages
+     FROM requestDetails ${where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize]
+  );
+  return { rows, totalItems };
+}

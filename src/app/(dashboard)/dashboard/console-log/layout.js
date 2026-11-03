@@ -6,6 +6,7 @@ import { cn } from "@/shared/utils/cn";
 
 const TABS = [
   { href: "/dashboard/console-log", label: "Console", icon: "terminal" },
+  { href: "/dashboard/console-log/requests", label: "Requests", icon: "receipt_long" },
   { href: "/dashboard/console-log/activity", label: "Activity", icon: "history" },
   { href: "/dashboard/console-log/proxy", label: "Proxy", icon: "lan" },
   { href: "/dashboard/console-log/timeline", label: "Timeline", icon: "timeline" },
