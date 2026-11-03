@@ -77,27 +77,36 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
-// Keep the payload's structure (roles, tool calls, params) and trim only long strings.
-function shrinkStrings(value, limit) {
-  if (typeof value === "string") return value.length > limit ? `${value.slice(0, limit)}… [+${value.length - limit} chars]` : value;
-  if (Array.isArray(value)) return value.map((v) => shrinkStrings(v, limit));
+// Keep the payload's structure (roles, tool calls, params): trim long strings, and for very long
+// lists (agent chats with thousands of turns) keep the first 2 and the latest `arrKeep` items.
+function shrinkDeep(value, strLimit, arrKeep) {
+  if (typeof value === "string") return value.length > strLimit ? `${value.slice(0, strLimit)}… [+${value.length - strLimit} chars]` : value;
+  if (Array.isArray(value)) {
+    const items = value.length > arrKeep + 2
+      ? [...value.slice(0, 2), { _omitted: value.length - 2 - arrKeep }, ...value.slice(-arrKeep)]
+      : value;
+    return items.map((v) => shrinkDeep(v, strLimit, arrKeep));
+  }
   if (value && typeof value === "object") {
     const out = {};
-    for (const k of Object.keys(value)) out[k] = shrinkStrings(value[k], limit);
+    for (const k of Object.keys(value)) out[k] = shrinkDeep(value[k], strLimit, arrKeep);
     return out;
   }
   return value;
 }
+
+// [stringLimit, arrayKeep] in order of preference: keep all items first, window lists only if needed.
+const SHRINK_ATTEMPTS = [[4000, Infinity], [1500, Infinity], [500, Infinity], [160, Infinity], [1500, 60], [500, 30], [500, 16], [160, 8], [160, 4]];
 
 function truncateField(obj, maxSize) {
   const str = JSON.stringify(obj || {});
   if (str.length <= maxSize) return obj || {};
   // An all-or-nothing cap made agent prompts (100KB+ of system text) unreadable; shrink text first.
   if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-    for (const limit of [4000, 1500, 500, 160]) {
-      const shrunk = shrinkStrings(obj, limit);
-      if (JSON.stringify(shrunk).length + 80 <= maxSize) {
-        return { ...shrunk, _shrunk: { originalSize: str.length, stringLimit: limit } };
+    for (const [limit, keep] of SHRINK_ATTEMPTS) {
+      const shrunk = shrinkDeep(obj, limit, keep);
+      if (JSON.stringify(shrunk).length + 100 <= maxSize) {
+        return { ...shrunk, _shrunk: { originalSize: str.length, stringLimit: limit, ...(keep === Infinity ? {} : { arrayKeep: keep }) } };
       }
     }
   }

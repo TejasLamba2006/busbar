@@ -118,3 +118,17 @@ describe("payload size cap keeps structure", () => {
     expect(out._shrunk.originalSize).toBeGreaterThan(120_000);
   });
 });
+
+describe("payload cap on very long conversations", () => {
+  it("keeps the first and latest messages and marks the omitted middle", async () => {
+    const { __test__ } = await import("../../src/lib/db/repos/requestDetailsRepo.js");
+    const messages = Array.from({ length: 3000 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: `turn ${i} ` + "y".repeat(900) }));
+    const out = __test__.truncateField({ messages, model: "m" }, 64 * 1024);
+    expect(out._truncated).toBeUndefined();
+    expect(JSON.stringify(out).length).toBeLessThanOrEqual(64 * 1024);
+    expect(out.messages[0].content).toContain("turn 0");
+    expect(out.messages.some((m) => m._omitted > 0)).toBe(true);
+    expect(out.messages.at(-1).content).toContain("turn 2999");
+    expect(out._shrunk.arrayKeep).toBeGreaterThan(0);
+  });
+});

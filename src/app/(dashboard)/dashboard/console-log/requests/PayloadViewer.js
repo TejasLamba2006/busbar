@@ -24,7 +24,7 @@ function ShrunkNote({ value, maxJsonKB }) {
   if (!s) return null;
   return (
     <div className="rounded-[10px] border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-300">
-      Long text was trimmed to {s.stringLimit} characters per field to fit the {maxJsonKB ?? "?"} KB cap (original {fmtSize(s.originalSize)}). Raise the cap in the logging settings to keep more.
+      Long text was trimmed to {s.stringLimit} characters per field{s.arrayKeep ? `, and long lists keep only the first 2 and the latest ${s.arrayKeep} items` : ""}, to fit the {maxJsonKB ?? "?"} KB cap (original {fmtSize(s.originalSize)}). Raise the cap in the logging settings to keep more.
     </div>
   );
 }
@@ -175,7 +175,9 @@ function Messages({ detail, maxJsonKB }) {
   return (
     <div className="flex flex-col gap-2">
       <ShrunkNote value={req} maxJsonKB={maxJsonKB} />
-      {msgs.map((m, i) => (
+      {msgs.map((m, i) => m && m._omitted !== undefined ? (
+        <div key={i} className="py-1 text-center text-[11px] text-text-muted">… {m._omitted} earlier messages omitted to fit the cap …</div>
+      ) : (
         <Block key={i} role={m?.role || "unknown"} content={m?.content} toolCalls={m?.tool_calls} />
       ))}
       {hasOut && <Block role="assistant" content={res.content} thinking={res.thinking} toolCalls={res.tool_calls} />}
