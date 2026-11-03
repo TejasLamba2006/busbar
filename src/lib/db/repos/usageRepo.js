@@ -205,6 +205,14 @@ export function emitRequestError(entry) {
     requestErrorBuffer.push(event);
     if (requestErrorBuffer.length > REQUEST_ERROR_BUFFER) requestErrorBuffer.shift();
     statsEmitter.emit("requestError", event);
+    // ponytail: lazy import keeps this repo free of a hard dependency on the activity log
+    import("@/lib/activity.js").then((m) => m.recordSystemActivity({
+      type: "request.error",
+      target: [event.provider, event.model].filter(Boolean).join("/") || null,
+      summary: `${event.provider || "upstream"}${event.model ? "/" + event.model : ""} failed${event.status ? " [" + event.status + "]" : ""}${event.message ? ": " + event.message.slice(0, 160) : ""}`,
+      meta: { status: event.status, provider: event.provider || null, model: event.model || null },
+      dedupeKey: `re|${event.provider}|${event.model}|${event.status}`,
+    })).catch(() => {});
   } catch { /* never block the request path */ }
 }
 

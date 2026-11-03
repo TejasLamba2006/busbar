@@ -15,6 +15,8 @@ const FILTERS = [
   { value: "settings", label: "Settings" },
   { value: "proxy-pool", label: "Proxy pools" },
   { value: "auth", label: "Auth" },
+  { value: "account", label: "Cooldowns" },
+  { value: "request", label: "Errors" },
 ];
 
 const FAMILY = {
@@ -24,6 +26,8 @@ const FAMILY = {
   settings: { icon: "tune", cls: "text-slate-300 bg-slate-500/10 border-slate-500/30" },
   "proxy-pool": { icon: "lan", cls: "text-cyan-400 bg-cyan-500/10 border-cyan-500/30" },
   auth: { icon: "login", cls: "text-green-400 bg-green-500/10 border-green-500/30" },
+  account: { icon: "timer_pause", cls: "text-orange-400 bg-orange-500/10 border-orange-500/30" },
+  request: { icon: "error", cls: "text-red-400 bg-red-500/10 border-red-500/30" },
 };
 const FAILED = { icon: "gpp_bad", cls: "text-red-400 bg-red-500/10 border-red-500/30" };
 const FALLBACK = { icon: "history", cls: "text-text-muted bg-surface-2 border-border-subtle" };

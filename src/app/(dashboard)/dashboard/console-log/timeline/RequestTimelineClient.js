@@ -43,6 +43,7 @@ const Bar = memo(function Bar({ row, kind, left, width, lane, selected, onHover,
       style={{ left: `${left}%`, width: `${width}%`, top: lane * LANE_H + (LANE_H - BAR_H) / 2, height: BAR_H }}
     >
       {ttftPct > 0 && <div className="absolute inset-y-0 left-0 bg-black/30" style={{ width: `${ttftPct}%` }} />}
+      <span className="relative block truncate px-1 text-[10px] leading-4 font-medium text-white/90 pointer-events-none">{row.model || row.provider}</span>
     </div>
   );
 });
@@ -52,8 +53,9 @@ export default function RequestTimelineClient() {
   const [error, setError] = useState(null);
   const [spanMs, setSpanMs] = useState(300_000);
   const [follow, setFollow] = useState(true);
-  const [now, setNow] = useState(() => Date.now());
-  const [pausedEnd, setPausedEnd] = useState(() => Date.now());
+  // 0 until mounted: Date.now() and local-time tick labels differ between server and client render (hydration error #418)
+  const [now, setNow] = useState(0);
+  const [pausedEnd, setPausedEnd] = useState(0);
   const [provider, setProvider] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [tip, setTip] = useState(null);
@@ -62,11 +64,15 @@ export default function RequestTimelineClient() {
   const trackRef = useRef(null);
   const rowsRef = useRef([]);
   const dragRef = useRef(null);
+  const movedRef = useRef(false);
   const viewRef = useRef({});
 
+  const ready = now > 0;
   const end = follow ? now : pausedEnd;
   const start = end - spanMs;
   viewRef.current = { follow, end, spanMs };
+
+  useEffect(() => { const t = Date.now(); setNow(t); setPausedEnd(t); }, []);
 
   // Polling: incremental fetch with small overlap, paused while tab hidden.
   useEffect(() => {
@@ -130,15 +136,17 @@ export default function RequestTimelineClient() {
 
   const onPointerDown = (e) => {
     if (e.button !== 0) return;
+    movedRef.current = false;
     dragRef.current = { x: e.clientX, end: viewRef.current.end, moved: false };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onPointerMove = (e) => {
     const d = dragRef.current;
     if (!d) return;
     const dx = e.clientX - d.x;
     if (!d.moved && Math.abs(dx) < 3) return;
+    if (!d.moved) e.currentTarget.setPointerCapture?.(e.pointerId);
     d.moved = true;
+    movedRef.current = true;
     const w = trackRef.current?.clientWidth || 1;
     setFollow(false);
     setPausedEnd(d.end - (dx / w) * viewRef.current.spanMs);
@@ -154,12 +162,12 @@ export default function RequestTimelineClient() {
   );
   // Lanes over all filtered rows so bars keep their lane while panning.
   const { lanes, laneCount } = useMemo(() => allocateLanes(filtered), [filtered]);
-  const visible = useMemo(() => visibleRows(filtered, start, end), [filtered, start, end]);
-  const { step, ticks } = useMemo(() => axisTicks(start, end), [start, end]);
+  const visible = useMemo(() => (ready ? visibleRows(filtered, start, end) : []), [ready, filtered, start, end]);
+  const { step, ticks } = useMemo(() => (ready ? axisTicks(start, end) : { step: 0, ticks: [] }), [ready, start, end]);
 
   const onHover = useCallback((row, e) => setTip({ row, x: e.clientX, y: e.clientY }), []);
   const onLeave = useCallback(() => setTip(null), []);
-  const onSelect = useCallback((row) => { if (!dragRef.current?.moved) setSelected(row); }, []);
+  const onSelect = useCallback((row) => { if (!movedRef.current) setSelected(row); }, []);
 
   const pct = (t) => ((t - start) / spanMs) * 100;
   const errCount = useMemo(() => rows.filter((r) => statusKind(r.status) === "error").length, [rows]);

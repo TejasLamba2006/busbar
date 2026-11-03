@@ -27,6 +27,22 @@ export function logActivity(type, summary, target = null, meta = null) {
   (async () => recordActivity({ type, actor: await actorFromRequest(), target, summary, meta }))().catch(() => {});
 }
 
+// Gateway-side events (cooldowns, failed upstream requests). Deduped per key so a retry storm is one row.
+const recentSystem = new Map();
+const SECRET_RE = /\b(?:sk|pk|rk|ak|xai|gsk|AIza|ghp|gho|ABSK)[-_A-Za-z0-9]{8,}|Bearer\s+[A-Za-z0-9._~+\/=-]{8,}|(?:key|token|secret)["']?\s*[:=]\s*["']?[A-Za-z0-9._-]{8,}/gi;
+export const maskSecrets = (s) => String(s ?? "").replace(SECRET_RE, "[redacted]");
+
+export function recordSystemActivity({ type, summary, target = null, meta = null, dedupeKey, windowMs = 60000 }) {
+  try {
+    const now = Date.now();
+    const key = dedupeKey || `${type}|${summary}`;
+    if (now - (recentSystem.get(key) || 0) < windowMs) return;
+    recentSystem.set(key, now);
+    if (recentSystem.size > 500) for (const [k, t] of recentSystem) if (now - t > windowMs) recentSystem.delete(k);
+    recordActivity({ type, actor: "system", target, summary: maskSecrets(summary).slice(0, 300), meta });
+  } catch { /* never block the request path */ }
+}
+
 // Changed key names only, never values.
 export function describeSettingsChange(body) {
   const keys = Object.keys(body || {}).sort();
