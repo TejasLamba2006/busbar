@@ -344,7 +344,9 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens),
+          // ms/ttft feed the dashboard Timeline; omitted when unknown so old-shape rows stay {}
+          stringifyJson(entry.latency?.total > 0 ? { ms: entry.latency.total, ...(entry.latency.ttft > 0 && entry.latency.ttft < entry.latency.total ? { ttft: entry.latency.ttft } : {}) } : {}),
         ]
       );
 

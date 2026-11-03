@@ -12,6 +12,7 @@ import {
   buildClaudeExtraUsageStateClearUpdate,
   isClaudeExtraUsageBlockEnabled,
 } from "@/lib/providers/claudeExtraUsage";
+import { logActivity } from "@/lib/activity";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -198,6 +199,7 @@ export async function PUT(request, { params }) {
     }
 
     const updated = await updateProviderConnection(id, updateData);
+    logActivity("provider.updated", `Updated provider connection "${existing.name || id}" (${existing.provider})`, `${existing.provider} / ${existing.name || id}`, { fields: Object.keys(updateData) });
 
     return NextResponse.json({ connection: toProviderConnectionResponse(updated) });
   } catch (error) {
@@ -222,6 +224,7 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    logActivity("provider.removed", `Removed provider connection "${existing.name || id}" (${existing.provider})`, `${existing.provider} / ${existing.name || id}`);
     return NextResponse.json({ message: "Connection deleted successfully" });
   } catch (error) {
     console.log("Error deleting connection:", error);

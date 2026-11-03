@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { validateAllowedEndpointsInput, validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,7 @@ export async function POST(request) {
     if (checkedAccess) options.access = checkedAccess.value;
     const apiKey = await createApiKey(name, machineId, endpoints, options);
 
+    logActivity("key.created", `Created API key "${apiKey.name}"`, apiKey.name);
     return NextResponse.json({
       key: apiKey.key,
       name: apiKey.name,

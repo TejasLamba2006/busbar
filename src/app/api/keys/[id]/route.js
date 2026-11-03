@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyAccessInput, validateAllowedEndpointsInput } from "@/shared/utils/keyAccess.js";
+import { logActivity } from "@/lib/activity";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -46,6 +47,7 @@ export async function PUT(request, { params }) {
     }
 
     const updated = await updateApiKey(id, updateData);
+    logActivity("key.updated", `Updated API key "${existing.name}"`, existing.name, { fields: Object.keys(updateData) });
 
     return NextResponse.json({ key: updated });
   } catch (error) {
@@ -59,11 +61,13 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
 
+    const prevKey = await getApiKeyById(id);
     const deleted = await deleteApiKey(id);
     if (!deleted) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
 
+    logActivity("key.deleted", `Deleted API key "${prevKey?.name || id}"`, prevKey?.name || id);
     return NextResponse.json({ message: "Key deleted successfully" });
   } catch (error) {
     console.log("Error deleting key:", error);

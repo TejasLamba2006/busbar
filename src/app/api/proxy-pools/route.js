@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool, getProviderConnections, getProxyPools } from "@/models";
+import { logActivity } from "@/lib/activity";
 
 function toBoolean(value) {
   if (value === "true") return true;
@@ -85,6 +86,7 @@ export async function POST(request) {
     }
 
     const proxyPool = await createProxyPool(normalized);
+    logActivity("proxy-pool.created", `Created proxy pool "${normalized.name}"`, normalized.name);
     return NextResponse.json({ proxyPool }, { status: 201 });
   } catch (error) {
     console.log("Error creating proxy pool:", error);

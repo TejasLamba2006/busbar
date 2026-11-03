@@ -6,6 +6,7 @@ import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { isLocalRequest } from "@/dashboardGuard";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { recordActivity } from "@/lib/activity";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
@@ -26,6 +27,7 @@ async function matchesMasterPassword(password, storedHash) {
 }
 
 function invalidLogin(ip) {
+  recordActivity({ type: "auth.login_failed", actor: "unknown", summary: "Failed dashboard login attempt" });
   const { remainingBeforeLock } = recordFail(ip);
   const postLock = checkLock(ip);
   if (postLock.locked) {
@@ -62,6 +64,7 @@ export async function POST(request) {
     if (mode === "signup") {
       if (!(await matchesMasterPassword(masterPassword, storedHash))) {
         recordFail(ip);
+        recordActivity({ type: "auth.login_failed", actor: "unknown", summary: "Failed dashboard login attempt" });
         return NextResponse.json({ error: "Only Master password can create client accounts." }, { status: 401 });
       }
       const normalizedEmail = typeof clientEmail === "string" ? clientEmail.trim().toLowerCase() : "";
@@ -75,6 +78,7 @@ export async function POST(request) {
         { clientEmail: normalizedEmail }
       );
       recordSuccess(ip);
+      recordActivity({ type: "auth.login", actor: apiKey.clientEmail || "master", summary: "Client account created and signed in", meta: { role: "client", signup: true } });
       const cookieStore = await cookies();
       await setDashboardAuthCookie(cookieStore, request, {
         role: "client",
@@ -101,6 +105,7 @@ export async function POST(request) {
       }
       const cookieStore = await cookies();
       await setDashboardAuthCookie(cookieStore, request, { role: "master" });
+      recordActivity({ type: "auth.login", actor: "master", summary: "Master signed in", meta: { role: "master" } });
       return NextResponse.json({ success: true, role: "master", mustChangePassword: false }, { headers: NO_STORE_HEADERS });
     }
 
@@ -108,6 +113,7 @@ export async function POST(request) {
     if (!clientKey) return invalidLogin(ip);
 
     recordSuccess(ip);
+    recordActivity({ type: "auth.login", actor: clientKey.clientEmail || clientKey.name, summary: "Client signed in", meta: { role: "client" } });
     const cookieStore = await cookies();
     await setDashboardAuthCookie(cookieStore, request, {
       role: "client",

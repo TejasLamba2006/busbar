@@ -172,8 +172,8 @@ const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/console-log"))
     return {
-      title: "Console Log",
-      description: "Live server console output",
+      title: "Logs",
+      description: "Console, activity, proxy and request timeline",
       icon: "monitor",
       breadcrumbs: [],
     };

@@ -5,6 +5,7 @@ import {
   getProxyPoolById,
   updateProxyPool,
 } from "@/models";
+import { logActivity } from "@/lib/activity";
 
 function normalizeProxyPoolUpdate(body = {}) {
   const updates = {};
@@ -84,6 +85,7 @@ export async function PUT(request, { params }) {
     }
 
     const updated = await updateProxyPool(id, normalized.updates);
+    logActivity("proxy-pool.updated", `Updated proxy pool "${existing.name}"`, existing.name, { fields: Object.keys(normalized.updates) });
     return NextResponse.json({ proxyPool: updated });
   } catch (error) {
     console.log("Error updating proxy pool:", error);
@@ -115,6 +117,7 @@ export async function DELETE(request, { params }) {
     }
 
     await deleteProxyPool(id);
+    logActivity("proxy-pool.deleted", `Deleted proxy pool "${existing.name}"`, existing.name);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting proxy pool:", error);

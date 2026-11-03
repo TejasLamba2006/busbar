@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "@/lib/dataDir.js";
+import { logActivity, describeSettingsChange } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -171,6 +172,7 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
 
+    { const c = describeSettingsChange(body); logActivity("settings.updated", c.summary, c.target, c.meta); }
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
