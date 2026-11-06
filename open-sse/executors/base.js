@@ -102,13 +102,10 @@ export class BaseExecutor {
     let lastError = null;
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
+    const forceFreshSocketByUrl = {};
 
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
-    let activeProxyOptions = proxyOptions;
-    const remainingProxyCandidates = Array.isArray(proxyOptions?.proxyCandidates)
-      ? [...proxyOptions.proxyCandidates]
-      : [];
 
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
@@ -123,18 +120,6 @@ export class BaseExecutor {
         if (dynamic != null) waitMs = dynamic;
       }
       retryAttemptsByUrl[urlIndex]++;
-      if (
-        remainingProxyCandidates.length > 0 &&
-        (statusKey === HTTP_STATUS.BAD_GATEWAY ||
-          statusKey === HTTP_STATUS.SERVICE_UNAVAILABLE ||
-          statusKey === HTTP_STATUS.GATEWAY_TIMEOUT)
-      ) {
-        activeProxyOptions = remainingProxyCandidates.shift();
-        log?.info?.(
-          "PROXY",
-          `${this.provider.toUpperCase()} | rotating proxy on ${reason} -> pool=${activeProxyOptions.proxyPoolId || "direct"}`
-        );
-      }
       log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
       await new Promise(resolve => setTimeout(resolve, waitMs));
       return true;
@@ -151,7 +136,7 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const timeoutMs = providerOverrides?.timeoutMs || this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
@@ -159,20 +144,29 @@ export class BaseExecutor {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        const effectiveProxyOptions = forceFreshSocketByUrl[urlIndex]
+          ? { ...(proxyOptions || {}), forceFreshSocket: true }
+          : proxyOptions;
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,
           body: bodyStr,
           signal: mergedSignal,
-          // Provider-specific direct transport (OpenCode TLS impersonation); proxy routing still wins.
+          // Protocol adapters that need their own transport (opencode's TLS
+          // fingerprint) override the direct path; proxies still take priority.
           ...(directFetch ? { directFetch } : {}),
-        }, activeProxyOptions);
+        }, effectiveProxyOptions);
         clearTimeout(connectTimer);
         const ct = response.headers?.get?.("content-type") || "";
         const cl = response.headers?.get?.("content-length") || "?";
         dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
 
-        if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) { urlIndex--; continue; }
+        if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) {
+          // A 502 from an edge is typically a poisoned keep-alive socket — retry fresh.
+          if (response.status === HTTP_STATUS.BAD_GATEWAY) forceFreshSocketByUrl[urlIndex] = true;
+          urlIndex--;
+          continue;
+        }
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
@@ -186,11 +180,16 @@ export class BaseExecutor {
         lastError = error;
         const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
         dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
-        // Connect timeout is internal — convert to network error, don't propagate AbortError
+        // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
         if (error.name === "AbortError" && !isConnectTimeout) throw error;
 
-        // ponytail: do not retry same URL on connect timeout — 90s × 2 exceeds Cloudflare's 100-120s 524 ceiling
-        if (!isConnectTimeout && await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
+        // Map network/fetch exceptions to 502 retry config; force a fresh socket on retry
+        // so a silently-dropped keep-alive socket is never reused from the pool.
+        if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) {
+          forceFreshSocketByUrl[urlIndex] = true;
+          urlIndex--;
+          continue;
+        }
 
         if (urlIndex + 1 < fallbackCount) {
           log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
