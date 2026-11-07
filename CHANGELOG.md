@@ -1,3 +1,13 @@
+# v1.0.58
+
+## Upstream integration
+- Port all 29 functional commits from upstream v0.5.111–v0.5.112; exclude only upstream release markers.
+- Add Runcrate, Nace Drex, Ollama local embeddings/TTS, CommandCode Kimi K3.1 Pro, Codex GPT-6.1 Terra, and MiniMax desktop lease authentication.
+- Restore OpenCode free-tier TLS compatibility, stable sessions, fingerprint normalization, and partial lazy-runtime install recovery.
+- Fix Claude adaptive thinking, GPT max effort, Gemini schemas, native Claude Headroom document preservation, and non-streaming SSE error handling.
+- Update CodeBuddy/CommandCode request headers, DeepSeek proof-of-work, Docker lazy dependencies, and editable Pi model limits.
+- Preserve Busbar client isolation, proxy replay, protected tool output, provider pricing, and Responses output-token floors.
+
 # Unreleased
 
 ## Fixes

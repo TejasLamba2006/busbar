@@ -14,6 +14,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  applyResponsesOutputCap,
 } from "../translator/formats/responsesApi.js";
 
 // OpenCode v2 UA shape: opencode/<channel>/<version>/<client>. Upstream rejects
@@ -21,7 +22,14 @@ import {
 const OPENCODE_UA = "opencode/latest/2.0.26/cli";
 const OPENCODE_CLIENT = "cli";
 const MAX_SESSION_LENGTH = 256;
-const MAX_TOOL_NAME_LEN = 128;
+// Zen rejects tool names over 64 chars (400 invalid_request_error).
+const MAX_TOOL_NAME_LEN = 64;
+
+function clampToolName(name) {
+  if (name.length <= MAX_TOOL_NAME_LEN) return name;
+  const hash = crypto.createHash("sha256").update(name).digest("hex").slice(0, 8);
+  return `${name.slice(0, 50)}__${hash}`;
+}
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
@@ -267,7 +275,7 @@ function normalizeResponsesTools(body) {
     if (parameters.type === "object" && !parameters.properties) parameters = { ...parameters, properties: {} };
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
-    tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
+    tool.name = clampToolName(name);
     if (description) tool.description = description;
     tool.parameters = parameters;
     validNames.add(tool.name);
@@ -300,7 +308,7 @@ function sanitizeResponsesItems(body) {
     delete item.reasoning_encrypted_content;
     if (item.type === "function_call") {
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") return false;
-      item.name = item.name.trim().slice(0, MAX_TOOL_NAME_LEN);
+      item.name = clampToolName(item.name.trim());
       item.call_id = clampResponsesCallId(item.call_id);
       item.arguments = coerceResponsesArguments(item.arguments);
       return true;
@@ -380,12 +388,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       }
       // Responses API names the output cap max_output_tokens and takes thinking
       // as reasoning:{effort,summary} — normalize the Chat fields at this boundary.
-      if (body.max_output_tokens === undefined) {
-        if (body.max_completion_tokens !== undefined) body.max_output_tokens = body.max_completion_tokens;
-        else if (body.max_tokens !== undefined) body.max_output_tokens = body.max_tokens;
-      }
-      delete body.max_tokens;
-      delete body.max_completion_tokens;
+      applyResponsesOutputCap(body);
       normalizeOpencodeReasoning(model, body);
       body.stream = true;
       body.store = false;

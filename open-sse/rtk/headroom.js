@@ -1,7 +1,6 @@
 import { FORMATS } from "../translator/formats.js";
 import { claudeToOpenAIRequest } from "../translator/request/claude-to-openai.js";
 import { openaiToClaudeRequest } from "../translator/request/openai-to-claude.js";
-import { FORMATS } from "../translator/formats.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, COMMANDCODE_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { buildToolNameMap, shouldSkipResult, forEachToolResult } from "./guard.js";
 import { HEADROOM_TOOL_OUTPUT_MAX_DEPTH } from "./constants.js";
