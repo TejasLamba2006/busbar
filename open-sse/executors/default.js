@@ -10,6 +10,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { applyMaxCompletionTokens, applyMinMaxCompletionTokens } from "../translator/formats/maxTokens.js";
+import { applyResponsesOutputCap } from "../translator/formats/responsesApi.js";
 import { recordRenamedToolNames } from "../utils/opencodeFingerprint.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
 
@@ -177,6 +178,11 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+      // Native /v1/responses requests skip format translation when source and target match.
+      // Enforce the shared Responses floor here at the final provider boundary too.
+      if (credentials?.runtimeTransport?.format === "openai-responses") {
+        applyResponsesOutputCap(transformed);
+      }
       // Responses wire: reasoning_effort moved to reasoning.effort (400 otherwise).
       if (credentials?.runtimeTransport?.format === "openai-responses" && typeof transformed.reasoning_effort === "string") {
         transformed.reasoning = { ...(transformed.reasoning || {}), effort: transformed.reasoning_effort };
