@@ -73,7 +73,7 @@ describe("Claude Headroom document preservation (#4670)", () => {
   it("preserves string system, user and tool-result content shapes", async () => {
     const body = { system: "long instructions", messages: [
       { role: "user", content: "long question" },
-      { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "read", input: {} }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "shell", input: {} }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "long output" }] },
     ] };
     const expected = structuredClone(body);
