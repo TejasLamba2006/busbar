@@ -20,6 +20,17 @@ vi.mock("../../src/sse/services/auth.js", () => ({
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: async () => ({ requireApiKey: false }),
+  getProviderNodes: async () => [],
+}));
+
+vi.mock("@/lib/disabledModelsDb", () => ({
+  getDisabledModels: async () => ({}),
+  disableModels: vi.fn(),
+  enableModels: vi.fn(),
+}));
+
+vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({
+  getApiKeyByKey: async () => null,
 }));
 
 vi.mock("../../src/sse/services/model.js", () => ({
