@@ -20,6 +20,13 @@ const EXCLUDE_PATTERNS = [
   ".env",           // Environment files
   ".env.local",
   ".env.*.local",
+  ".build-home",   // Build-time state can contain credentials from older builds
+  ".busbar",
+  ".9router",
+  ".npmrc",
+  "*.sqlite*",
+  "jwt-secret",
+  "machine-id",
   "*.log",          // Log files
   "tmp",            // Temp files
   ".DS_Store",      // macOS files

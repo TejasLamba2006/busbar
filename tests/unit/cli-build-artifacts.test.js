@@ -96,6 +96,32 @@ describe("CLI build server artifacts", () => {
     });
   }
 
+  it("omits build-home credentials and SQLite state from standalone copies", () => {
+    const root = createTempDir();
+    const appDir = path.join(root, "9router");
+    const buildDistDir = path.join(appDir, ".next-cli-build");
+    const cliAppDir = path.join(root, "cli-app");
+    const standaloneDir = path.join(buildDistDir, "standalone", "9router");
+    writeFixture(standaloneDir, "server.js");
+    const sensitivePaths = [
+      "cli/.build-home/.busbar/jwt-secret",
+      "cli/.build-home/.busbar/db/data.sqlite",
+      ".busbar/db/data.sqlite",
+      ".9router/jwt-secret",
+      "data.sqlite",
+      "data.sqlite-wal",
+      "jwt-secret",
+      "machine-id",
+      ".npmrc",
+    ];
+    for (const file of sensitivePaths) writeFixture(standaloneDir, file, "private fixture");
+
+    copyStandaloneBuild(appDir, buildDistDir, cliAppDir);
+
+    assert.ok(fs.existsSync(path.join(cliAppDir, "server.js")));
+    for (const file of sensitivePaths) assert.ok(!fs.existsSync(path.join(cliAppDir, file)), file);
+  });
+
   it("merges idempotently without removing standalone-generated files", () => {
     const root = createTempDir();
     const buildDistDir = path.join(root, ".next-cli-build");
