@@ -11,6 +11,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  applyResponsesOutputCap,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
@@ -338,14 +339,7 @@ function buildReasoningInputItem(msg) {
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
   if (body.input) {
-    const out = { ...body, model, stream: true };
-    if (out.max_output_tokens === undefined) {
-      if (out.max_completion_tokens !== undefined) out.max_output_tokens = out.max_completion_tokens;
-      else if (out.max_tokens !== undefined) out.max_output_tokens = out.max_tokens;
-    }
-    delete out.max_tokens;
-    delete out.max_completion_tokens;
-    return out;
+    return applyResponsesOutputCap({ ...body, model, stream: true });
   }
 
   const result = {
@@ -495,9 +489,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
 
-  return result;
+  return applyResponsesOutputCap(result);
 }
-
-// Register both directions
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, openaiResponsesToOpenAIRequest, null);
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, openaiToOpenAIResponsesRequest, null);

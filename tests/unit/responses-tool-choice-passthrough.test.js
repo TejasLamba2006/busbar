@@ -49,6 +49,30 @@ describe("chat→Responses tool_choice passthrough", () => {
     expect("tool_choice" in out).toBe(false);
   });
 
+  it("raises Claude Code's /model max_output_tokens probe to the Responses minimum", () => {
+    const out = openaiToOpenAIResponsesRequest("gpt-5.6-sol", {
+      messages: [{ role: "user", content: "hi" }],
+      max_output_tokens: 1,
+    }, true, {});
+    expect(out.max_output_tokens).toBe(16);
+  });
+
+  it("raises Chat-style max_tokens probes to the same Responses minimum", () => {
+    const out = openaiToOpenAIResponsesRequest("gpt-5.6-sol", {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1,
+    }, true, {});
+    expect(out.max_output_tokens).toBe(16);
+  });
+
+  it("leaves valid output token caps unchanged", () => {
+    const out = openaiToOpenAIResponsesRequest("gpt-5.6-sol", {
+      messages: [{ role: "user", content: "hi" }],
+      max_output_tokens: 256,
+    }, true, {});
+    expect(out.max_output_tokens).toBe(256);
+  });
+
   it("preserves parallel_tool_calls when present", () => {
     const out = openaiToOpenAIResponsesRequest("m", {
       messages: [{ role: "user", content: "hi" }],
