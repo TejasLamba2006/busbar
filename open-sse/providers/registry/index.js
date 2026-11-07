@@ -302,6 +302,8 @@ import p306 from "./typesafe.js";
 import p307 from "./qwen-web.js";
 import p308 from "./pixrouter.js";
 import p309 from "./inferx.js";
+import p310 from "./runcrate.js";
+import p311 from "./nace.js";
 export default [
   p0,
   p1,
@@ -605,4 +607,6 @@ export default [
   p307,
   p308,
   p309,
+  p310,
+  p311,
 ];
