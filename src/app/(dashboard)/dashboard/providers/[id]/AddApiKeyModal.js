@@ -13,16 +13,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
-  const credentialLabel = isCookie
-    ? (provider === "qwen-web" ? "JWT Token (localStorage.token) or email:password" : provider === "deepseek-web" ? "Session Token / Cookie" : "Cookie Value")
-    : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
+  const credentialLabel = isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
-    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : provider === "qwen-web" ? "eyJhbGciOi... (or email@example.com:password)" : "eyJhbGciOi...")
+    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
-  const isAgentrouter = provider === "agentrouter";
   // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
   // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
   const usesAwsCredentialForm =
@@ -48,10 +45,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
-  const [agentrouterData, setAgentrouterData] = useState({
-    agentrouterSystemAccessToken: "",
-    agentrouterUserId: "",
-  });
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -61,8 +54,31 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
-  const [validationError, setValidationError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [cliDetecting, setCliDetecting] = useState(false);
+  const [cliDetectError, setCliDetectError] = useState(null);
+
+  const handleCommandCodeAutoImport = async () => {
+    setCliDetecting(true);
+    setCliDetectError(null);
+    try {
+      const res = await fetch("/api/oauth/commandcode/auto-import");
+      const data = await res.json();
+      if (data.found && data.apiKey) {
+        setFormData((prev) => ({
+          ...prev,
+          name: prev.name || data.userName || data.keyName || "CommandCode CLI",
+          apiKey: data.apiKey,
+        }));
+      } else {
+        setCliDetectError(data.error || "Could not find Command Code credentials");
+      }
+    } catch {
+      setCliDetectError("Failed to auto-import from Command Code CLI");
+    } finally {
+      setCliDetecting(false);
+    }
+  };
   const bulkPlaceholder = isCloudflareAi
     ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
     : provider === "qoder" || provider === "qoder-cn"
@@ -88,16 +104,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
     }
-    if (isAgentrouter) {
-      const data = {};
-      if (agentrouterData.agentrouterSystemAccessToken.trim()) {
-        data.agentrouterSystemAccessToken = agentrouterData.agentrouterSystemAccessToken.trim();
-      }
-      if (agentrouterData.agentrouterUserId.trim()) {
-        data.agentrouterUserId = agentrouterData.agentrouterUserId.trim();
-      }
-      return Object.keys(data).length ? data : undefined;
-    }
     if (usesAwsCredentialForm) {
       // Only send what the user filled in: an empty `profile` would otherwise select profile
       // mode and shadow static keys, since detectCredentialMode prefers a profile.
@@ -120,14 +126,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const apiKeySatisfied = () => {
     const psd = buildProviderSpecificData();
     if (apiKeyOptionalWith && psd?.[apiKeyOptionalWith]) return true;
-    // AWS Bedrock accepts either a standalone bearer token (ABSK...) or a static key + accessKeyId pair.
-    if (usesAwsCredentialForm) return !!formData.apiKey;
+    // AWS static keys are a pair: a secret alone saves a connection that can never sign.
+    if (usesAwsCredentialForm) return !!formData.apiKey && !!psd?.accessKeyId;
     return !!formData.apiKey;
   };
 
   const handleValidate = async () => {
     setValidating(true);
-    setValidationError(null);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
@@ -136,7 +141,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
-      setValidationError(data.valid ? null : (data.error || null));
     } catch {
       setValidationResult("failed");
     } finally {
@@ -159,7 +163,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       try {
         setValidating(true);
         setValidationResult(null);
-        setValidationError(null);
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -168,7 +171,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const data = await res.json();
         isValid = !!data.valid;
         setValidationResult(isValid ? "success" : "failed");
-        setValidationError(isValid ? null : (data.error || null));
       } catch {
         setValidationResult("failed");
       } finally {
@@ -308,6 +310,23 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             </div>
           </div>
         )}
+        {provider === "commandcode" && (
+          <div className="flex items-center justify-between p-3 rounded bg-accent/10 border border-accent/20">
+            <div>
+              <div className="text-xs font-medium text-text">Command Code CLI detected?</div>
+              <div className="text-xs text-text-muted">Import API key directly from ~/.commandcode/auth.json</div>
+              {cliDetectError && <div className="text-xs text-red-400 mt-1">{cliDetectError}</div>}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleCommandCodeAutoImport}
+              disabled={cliDetecting || saving}
+            >
+              {cliDetecting ? "Importing..." : "Import from CLI"}
+            </Button>
+          </div>
+        )}
         {!isOllamaLocal && (
           <div className="flex gap-2">
             <Input
@@ -322,28 +341,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving} variant="secondary">
                 {validating ? "Checking..." : "Check"}
               </Button>
-            </div>
-          </div>
-        )}
-        {isAgentrouter && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
-            <h3 className="font-semibold mb-3 text-sm">Quota Tracker Credentials</h3>
-            <div className="flex flex-col gap-3">
-              <Input
-                label="System Access Token"
-                type="password"
-                value={agentrouterData.agentrouterSystemAccessToken}
-                onChange={(e) => setAgentrouterData({ ...agentrouterData, agentrouterSystemAccessToken: e.target.value })}
-                placeholder="AgentRouter system access token"
-                hint="Separate from the routing API key. Create it under Personal Settings → Security Settings."
-              />
-              <Input
-                label="New-API User ID"
-                value={agentrouterData.agentrouterUserId}
-                onChange={(e) => setAgentrouterData({ ...agentrouterData, agentrouterUserId: e.target.value })}
-                placeholder="42"
-                hint="Required with the System Access Token to read wallet balance."
-              />
             </div>
           </div>
         )}
@@ -387,14 +384,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           </p>
         )}
         {validationResult && (
-          <div className="flex flex-col gap-1">
-            <Badge variant={validationResult === "success" ? "success" : "error"}>
-              {validationResult === "success" ? "Valid" : "Invalid"}
-            </Badge>
-            {validationError && (
-              <p className="text-xs text-red-500 break-words">{validationError}</p>
-            )}
-          </div>
+          <Badge variant={validationResult === "success" ? "success" : "error"}>
+            {validationResult === "success" ? "Valid" : "Invalid"}
+          </Badge>
         )}
         {error && (
           <p className="text-xs text-red-500 break-words">{error}</p>
