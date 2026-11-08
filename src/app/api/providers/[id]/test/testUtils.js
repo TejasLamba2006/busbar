@@ -1,11 +1,11 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
-import { emitRequestError } from "@/lib/usageDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { GROK_CLI_PAGER_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import {
@@ -125,8 +125,6 @@ const OAUTH_TEST_CONFIG = {
     },
     refreshable: false,
   },
-  freebuff: { url: "https://www.codebuff.com/api/v1/me?fields=email", method: "GET", authHeader: "Authorization", authPrefix: "Bearer ", refreshable: false },
-  freepi: { url: "https://api.freepi.ai/me", method: "GET", authHeader: "Authorization", authPrefix: "Bearer ", refreshable: false },
   // Grok CLI / Grok Build — probe /v1/user (no inference quota). Headers mirror official CLI.
   "grok-cli": {
     url: PROVIDERS["grok-cli"]?.userUrl || "https://cli-chat-proxy.grok.com/v1/user",
@@ -292,7 +290,9 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "claude") {
-      const response = await fetch(CLAUDE_CONFIG.tokenUrl, {
+      // proxyAwareFetch, not bare fetch: the curved dispatcher is required to
+      // survive the DPI that RSTs Node's default ClientHello.
+      const response = await proxyAwareFetch(CLAUDE_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({
@@ -521,85 +521,6 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
   });
 }
 
-// Generic config-driven API-key probe for registry providers without a bespoke test case.
-// Auth is only rejected on 401/403; other statuses (400/404/429/...) still prove the key reached the API.
-async function testRegistryApiKey(connection, effectiveProxy) {
-  const providerMeta = AI_PROVIDERS[connection.provider];
-  const systemoneCfg = providerMeta?.systemoneConfig;
-  if (!PROVIDERS[connection.provider] && systemoneCfg) {
-    const key = connection.apiKey;
-    const headers = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-      ...(systemoneCfg.headers || {}),
-    };
-    const validateUrl = systemoneCfg.validateUrl || providerMeta?.modelsFetcher?.url;
-    if (validateUrl) {
-      const res = await fetchWithConnectionProxy(validateUrl, { headers }, effectiveProxy);
-      const valid = res.status !== 401 && res.status !== 403;
-      return { valid, error: valid ? null : "Invalid API key" };
-    }
-    const targetUrl = connection.providerSpecificData?.baseUrl || systemoneCfg.baseUrl;
-    const model = connection.defaultModel || getDefaultModel(connection.provider) || "jev-latest";
-    const res = await fetchWithConnectionProxy(targetUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model,
-        state: "ping",
-        questions: { q: { type: "noul", instructions: "Is this a ping?" } },
-      }),
-    }, effectiveProxy);
-    const valid = res.status !== 401 && res.status !== 403;
-    return { valid, error: valid ? null : "Invalid API key" };
-  }
-  const cfg = PROVIDERS[connection.provider];
-  if (!cfg) return { valid: false, error: "Provider test not supported" };
-  const key = connection.apiKey;
-  const isClaude = cfg.format === "claude";
-  const authHeaders = isClaude
-    ? { "x-api-key": key, "anthropic-version": "2023-06-01", Authorization: `Bearer ${key}` }
-    : cfg.auth?.header && cfg.auth.header.toLowerCase() !== "authorization"
-      ? { [cfg.auth.header]: key }
-      : { Authorization: `Bearer ${key}` };
-  const verdict = (res) => {
-    const valid = res.status !== 401 && res.status !== 403;
-    return { valid, error: valid ? null : "Invalid API key" };
-  };
-  const probe = async (url, extra = {}) => fetchWithConnectionProxy(url, {
-    ...extra,
-    headers: { ...authHeaders, ...(cfg.headers || {}), ...(extra.headers || {}) },
-  }, effectiveProxy);
-
-  const modelsUrl = cfg.validateUrl || AI_PROVIDERS[connection.provider]?.modelsFetcher?.url;
-  const baseUrl = (cfg.baseUrl || "").replace(/\?.*$/, "");
-  const model = connection.defaultModel || getDefaultModel(connection.provider);
-  const postChat = (url, body) => probe(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (modelsUrl) {
-    const res = await probe(modelsUrl);
-    if (res.ok) return { valid: true, error: null };
-    if (res.status !== 404 && res.status !== 405) return verdict(res);
-    // fall through to a 1-token completion when /models is not implemented
-  }
-  if (baseUrl.endsWith("/chat/completions")) {
-    if (!modelsUrl) {
-      const res = await probe(`${baseUrl.replace(/\/chat\/completions$/, "")}/models`);
-      if (res.ok) return { valid: true, error: null };
-      if (res.status !== 404 && res.status !== 405) return verdict(res);
-    }
-    return verdict(await postChat(baseUrl, { model, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }));
-  }
-  if (baseUrl.endsWith("/messages")) {
-    return verdict(await postChat(baseUrl, { model: model || "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "hi" }] }));
-  }
-  return { valid: false, error: "Provider test not supported" };
-}
-
 async function testApiKeyConnection(connection, effectiveProxy = null) {
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
@@ -823,14 +744,6 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
-      case "freebuff": {
-        const res = await fetchWithConnectionProxy("https://www.codebuff.com/api/v1/me?fields=email", { headers: { Authorization: `Bearer ${connection.apiKey || connection.accessToken}` } }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid or expired Freebuff token" };
-      }
-      case "freepi": {
-        const res = await fetchWithConnectionProxy("https://api.freepi.ai/me", { headers: { Authorization: `Bearer ${connection.apiKey || connection.accessToken}` } }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid or expired FreePi token" };
-      }
       case "deepseek": {
         const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -957,18 +870,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = !!(data && data.user);
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
-      case "utim": {
-        const res = await fetchWithConnectionProxy("https://api.utim.dev/v1/models", { headers: { Accept: "application/json" } }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "UTIM playground unavailable" };
-      }
       case "opencode": {
         const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
-          headers: { Authorization: "Bearer public", "User-Agent": "opencode/latest/2.0.26/cli", "x-opencode-client": "cli" },
+          headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
       }
       case "opencode-go": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
+        const res = await fetchWithConnectionProxy("https://opencode.ai/inference/go/openai/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
           body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
@@ -1054,7 +963,7 @@ case "llm7": {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
       default:
-        return await testRegistryApiKey(connection, effectiveProxy);
+        return { valid: false, error: "Provider test not supported" };
     }
   } catch (err) {
     return { valid: false, error: err.message };
@@ -1079,36 +988,20 @@ export async function testSingleConnection(id) {
         lastError: proxyError,
         lastErrorAt: new Date().toISOString(),
       });
-      emitRequestError({
-        provider: connection.provider,
-        model: connection.name || connection.email || id,
-        status: proxyResult.status || 502,
-        message: proxyError,
-      });
       return { valid: false, error: proxyError, latencyMs: 0, testedAt: new Date().toISOString() };
     }
   }
 
   const start = Date.now();
-  const token = connection.apiKey || connection.accessToken;
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie" || (!OAUTH_TEST_CONFIG[connection.provider] && token)) {
-    result = await testApiKeyConnection({ ...connection, apiKey: token }, effectiveProxy);
+  if (connection.authType === "apikey" || connection.authType === "cookie") {
+    result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);
   }
 
   const latencyMs = Date.now() - start;
-
-  if (!result.valid) {
-    emitRequestError({
-      provider: connection.provider,
-      model: connection.name || connection.email || id,
-      status: result.status || null,
-      message: result.error || "Connection test failed",
-    });
-  }
 
   // Soft success (e.g. Grok CLI 402 spending-limit): credentials are good, account is
   // out of credits. Keep testStatus active; surface the message as lastError so the
