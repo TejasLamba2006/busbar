@@ -16,6 +16,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 
 const NO_AUTH_VIDEO_PROVIDERS = new Set(["veoaifree-web"]);
 import * as log from "../utils/logger.js";
+import { recordMediaRequestDetail, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
@@ -148,9 +149,11 @@ export async function handleVideoCreate(request, action) {
 
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
+  const videoReqPayload = bodyInfo.parsed || { action, contentType: bodyInfo.contentType || "multipart/form-data" };
 
   // noAuth providers — executor-driven generation, no credential needed
   if (NO_AUTH_VIDEO_PROVIDERS.has(provider)) {
+    const attemptStart = Date.now();
     const result = await handleVideoProxyCore({
       provider,
       action,
@@ -161,7 +164,27 @@ export async function handleVideoCreate(request, action) {
       signal: request.signal,
       log,
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model: model || action,
+        status: "success",
+        startedAt: attemptStart,
+        request: videoReqPayload,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
+      return result.response;
+    }
+    recordMediaRequestDetail({
+      provider,
+      model: model || action,
+      status: "error",
+      startedAt: attemptStart,
+      request: videoReqPayload,
+      response: { error: result.error || "Video generation failed" },
+    });
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Video generation failed");
   }
 
@@ -185,6 +208,7 @@ export async function handleVideoCreate(request, action) {
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const attemptStart = Date.now();
 
     const result = await handleVideoProxyCore({
       provider,
@@ -210,8 +234,31 @@ export async function handleVideoCreate(request, action) {
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, model);
       log.info("VIDEO", `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`);
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model: model || action,
+        connectionId: credentials.connectionId,
+        status: "success",
+        startedAt: attemptStart,
+        request: videoReqPayload,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
       return withConnectionHeader(result.response, credentials.connectionId);
     }
+
+    const errPayload = await summarizeMediaResponse(result.response);
+    recordMediaRequestDetail({
+      provider,
+      model: model || action,
+      connectionId: credentials.connectionId,
+      status: "error",
+      startedAt: attemptStart,
+      request: videoReqPayload,
+      providerResponse: errPayload,
+      response: result.error ? { error: result.error } : errPayload,
+    });
 
     // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
     const { shouldFallback } = await markAccountUnavailable(

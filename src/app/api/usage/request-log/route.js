@@ -5,6 +5,9 @@ import {
   getObservabilityConfigPublic, resetObservabilityConfigCache, countRequestDetails,
   clearRequestDetails, listRequestLogRows,
 } from "@/lib/db/repos/requestDetailsRepo.js";
+import { getAdapter } from "@/lib/db/driver.js";
+import { createPricingResolver } from "@/lib/db/repos/pricingRepo.js";
+import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 import { updateSettings } from "@/lib/db/repos/settingsRepo.js";
 import { logActivity } from "@/lib/activity.js";
 
@@ -23,16 +26,25 @@ async function observability() {
   return out;
 }
 
-function previewOf(messages) {
-  if (!Array.isArray(messages)) return "";
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m?.role !== "user") continue;
-    const c = m.content;
-    const text = typeof c === "string" ? c
-      : Array.isArray(c) ? c.map((p) => (typeof p === "string" ? p : p?.text || "")).filter(Boolean).join(" ")
-      : "";
-    return text.slice(0, 120);
+function previewOf(messages, r = null) {
+  if (Array.isArray(messages)) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.role !== "user") continue;
+      const c = m.content;
+      const text = typeof c === "string" ? c
+        : Array.isArray(c) ? c.map((p) => (typeof p === "string" ? p : p?.text || "")).filter(Boolean).join(" ")
+        : "";
+      if (text) return text.slice(0, 120);
+    }
+  }
+  if (r) {
+    for (const val of [r.reqState, r.reqPrompt, r.reqInput, r.reqQuery, r.reqUrl, r.reqFile]) {
+      if (val != null && val !== "") {
+        const str = typeof val === "string" ? val : JSON.stringify(val);
+        if (str) return str.slice(0, 120);
+      }
+    }
   }
   return "";
 }
@@ -51,11 +63,33 @@ export async function GET(request) {
       provider: sp.get("provider") || undefined, model: sp.get("model") || undefined,
       status: sp.get("status") || undefined, q: sp.get("q") || undefined,
     });
+    const [db, resolvePricing] = await Promise.all([
+      getAdapter().catch(() => null),
+      createPricingResolver().catch(() => null),
+    ]);
     const items = rows.map((r) => {
       let messages = r.messages;
       if (typeof messages === "string") { try { messages = JSON.parse(messages); } catch { messages = null; } }
       const total = num(r.total);
       const ttft = num(r.ttft);
+      const promptTokens = num(r.promptTokens);
+      const completionTokens = num(r.completionTokens);
+      const cachedTokens = num(r.cachedTokens);
+      const reasoningTokens = num(r.reasoningTokens);
+      const cacheCreationTokens = num(r.cacheCreationTokens);
+      let cost = typeof r.mediaCost === "number" && Number.isFinite(r.mediaCost) ? r.mediaCost : 0;
+      if (!cost && db && resolvePricing && (promptTokens > 0 || completionTokens > 0)) {
+        const rates = resolvePricing(db, r.provider, r.model);
+        if (rates) {
+          cost = calculateCostFromTokens({
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            cached_tokens: cachedTokens,
+            reasoning_tokens: reasoningTokens,
+            cache_creation_input_tokens: cacheCreationTokens,
+          }, rates);
+        }
+      }
       return {
         id: r.id,
         ts: Date.parse(r.timestamp) || 0,
@@ -65,11 +99,12 @@ export async function GET(request) {
         status: r.status == null ? "" : String(r.status),
         durationMs: total,
         ttftMs: ttft > 0 && ttft < total ? ttft : null,
-        promptTokens: num(r.promptTokens),
-        completionTokens: num(r.completionTokens),
-        cachedTokens: num(r.cachedTokens),
-        preview: previewOf(messages),
-        hasPayload: !!r.reqType && !(r.reqTrunc && !r.msgType),
+        promptTokens,
+        completionTokens,
+        cachedTokens,
+        cost,
+        preview: previewOf(messages, r),
+        hasPayload: !!r.reqType && !(r.reqTrunc && !r.msgType && !r.reqState && !r.reqPrompt && !r.reqInput && !r.reqQuery && !r.reqUrl && !r.reqFile),
       };
     });
     return NextResponse.json({

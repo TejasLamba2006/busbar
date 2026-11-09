@@ -66,6 +66,7 @@ vi.mock("../../src/sse/utils/logger.js", () => ({
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
+  saveRequestDetail: vi.fn().mockResolvedValue(undefined),
   saveRequestUsage: mocks.saveRequestUsage,
 }));
 

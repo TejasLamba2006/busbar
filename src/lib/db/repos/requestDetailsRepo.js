@@ -294,10 +294,19 @@ export async function listRequestLogRows({ page = 1, pageSize = 50, provider, mo
       json_extract(data,'$.tokens.prompt_tokens') AS promptTokens,
       json_extract(data,'$.tokens.completion_tokens') AS completionTokens,
       json_extract(data,'$.tokens.cached_tokens') AS cachedTokens,
+      json_extract(data,'$.tokens.reasoning_tokens') AS reasoningTokens,
+      json_extract(data,'$.tokens.cache_creation_input_tokens') AS cacheCreationTokens,
+      COALESCE(json_extract(data,'$.response.usage.search_cost_usd'), json_extract(data,'$.response.usage.fetch_cost_usd')) AS mediaCost,
       json_type(data,'$.request') AS reqType,
       json_type(data,'$.request.messages') AS msgType,
       json_extract(data,'$.request._truncated') AS reqTrunc,
-      json_extract(data,'$.request.messages') AS messages
+      json_extract(data,'$.request.messages') AS messages,
+      json_extract(data,'$.request.state') AS reqState,
+      json_extract(data,'$.request.prompt') AS reqPrompt,
+      json_extract(data,'$.request.input') AS reqInput,
+      json_extract(data,'$.request.query') AS reqQuery,
+      json_extract(data,'$.request.url') AS reqUrl,
+      json_extract(data,'$.request.file') AS reqFile
      FROM requestDetails ${where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize]
   );

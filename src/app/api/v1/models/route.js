@@ -142,9 +142,10 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
 export async function buildModelsList(kindFilter, options = {}) {
-  const clientKeyId = options.clientKeyId || options.clientKeyRecord?.id || null;
-  const clientAllowsNoAuthProvider = (providerId) => !options.clientKeyRecord?.access?.restricted
-    || (options.clientKeyRecord.access.allow || []).some((entry) =>
+  const clientKeyRecord = options.clientKeyRecord?.clientEmail ? options.clientKeyRecord : null;
+  const clientKeyId = options.clientKeyId || clientKeyRecord?.id || null;
+  const clientAllowsNoAuthProvider = (providerId) => !clientKeyRecord?.access?.restricted
+    || (clientKeyRecord.access.allow || []).some((entry) =>
       resolveProviderId(String(entry).split("/", 1)[0]) === providerId
     );
   let connections = [];
@@ -597,7 +598,10 @@ export async function GET(request) {
           && connection.providerSpecificData?.clientActive !== false
         )
       : [];
-    const models = await buildModelsList(ALL_SERVICE_KINDS, { clientKeyId, clientKeyRecord: keyRecord });
+    const models = await buildModelsList(ALL_SERVICE_KINDS, {
+      clientKeyId,
+      clientKeyRecord: clientKeyId ? keyRecord : null,
+    });
     const clientProviderIds = new Set(connections.map((connection) => connection.provider));
     const assignedModels = keyRecord?.access?.allow || [];
     const filteredByAssignments = await filterModelsListForKey(
@@ -611,7 +615,7 @@ export async function GET(request) {
       } : null),
       models
     );
-    const data = keyRecord?.access?.restricted
+    const data = clientKeyId && keyRecord?.access?.restricted
       ? models.filter((model) =>
           filteredByAssignments.includes(model)
           || clientProviderIds.has(resolveProviderId(model.owned_by))

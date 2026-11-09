@@ -12,6 +12,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import { recordMediaRequestDetail, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
 const CREDENTIALED_PROVIDERS = new Set(
@@ -85,8 +86,29 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   // noAuth providers — no credential needed. Custom compatible nodes always
   // need their stored API key and endpoint metadata.
   if (!CREDENTIALED_PROVIDERS.has(provider) && !isOpenAICompatibleProvider(provider)) {
+    const attemptStart = Date.now();
     const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
-    if (result.success) return result.response;
+    if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        status: "success",
+        startedAt: attemptStart,
+        request: body,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
+      return result.response;
+    }
+    recordMediaRequestDetail({
+      provider,
+      model,
+      status: "error",
+      startedAt: attemptStart,
+      request: body,
+      response: { error: result.error || "TTS failed" },
+    });
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
 
@@ -106,8 +128,29 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
       }
       if (excludeConnectionIds.size === 0) {
         if (provider === "ollama-local") {
+          const attemptStart = Date.now();
           const result = await handleTtsCore({ provider, model, input: body.input, credentials: null, responseFormat, language, style });
-          if (result.success) return result.response;
+          if (result.success) {
+            const responsePayload = await summarizeMediaResponse(result.response);
+            recordMediaRequestDetail({
+              provider,
+              model,
+              status: "success",
+              startedAt: attemptStart,
+              request: body,
+              providerResponse: responsePayload,
+              response: responsePayload,
+            });
+            return result.response;
+          }
+          recordMediaRequestDetail({
+            provider,
+            model,
+            status: "error",
+            startedAt: attemptStart,
+            request: body,
+            response: { error: result.error || "TTS failed" },
+          });
           return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
         }
         return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
@@ -117,9 +160,33 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
+    const attemptStart = Date.now();
     const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        status: "success",
+        startedAt: attemptStart,
+        request: body,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
+      return result.response;
+    }
+
+    recordMediaRequestDetail({
+      provider,
+      model,
+      connectionId: credentials.connectionId,
+      status: "error",
+      startedAt: attemptStart,
+      request: body,
+      response: { error: result.error || "TTS failed" },
+    });
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
     if (shouldFallback) {

@@ -14,6 +14,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
+import { recordMediaRequestDetail, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -138,12 +139,23 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   // No-auth providers (e.g. searxng) bypass credential lookup
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
+    const attemptStart = Date.now();
     const result = await handleSearchCore({
       body: coreBody,
       provider: resolvedProvider,
       providerConfig,
       credentials: null,
       log
+    });
+    const responsePayload = await summarizeMediaResponse(result.response);
+    recordMediaRequestDetail({
+      provider: providerId,
+      model: "search",
+      status: result.success ? "success" : "error",
+      startedAt: attemptStart,
+      request: coreBody,
+      providerResponse: responsePayload,
+      response: responsePayload,
     });
     if (result.success) return result.response;
     return result.response;
@@ -200,6 +212,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
+    const attemptStart = Date.now();
 
     const result = await handleSearchCore({
       body: coreBody,
@@ -220,6 +233,17 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       }
     });
 
+    const responsePayload = await summarizeMediaResponse(result.response);
+    recordMediaRequestDetail({
+      provider: providerId,
+      model: "search",
+      connectionId: credentials.connectionId,
+      status: result.success ? "success" : "error",
+      startedAt: attemptStart,
+      request: coreBody,
+      providerResponse: responsePayload,
+      response: responsePayload,
+    });
     if (result.success) return result.response;
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, credentialProviderId, searchLockKey);

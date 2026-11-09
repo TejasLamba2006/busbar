@@ -172,6 +172,13 @@ function Messages({ detail, maxJsonKB }) {
   if (isTruncated(req)) return <TruncatedNote value={req} maxJsonKB={maxJsonKB} />;
   const msgs = Array.isArray(req?.messages) ? req.messages : [];
   const hasOut = res && !isTruncated(res) && (res.content || res.thinking || res.tool_calls?.length);
+  const nonChatInput = !msgs.length && req && typeof req === "object"
+    ? (req.state ?? req.prompt ?? req.input ?? req.query ?? req.url ?? req.file ?? null)
+    : null;
+  const nonChatQuestions = !msgs.length && req?.questions && typeof req.questions === "object" ? req.questions : null;
+  const nonChatOutput = !hasOut && res && !isTruncated(res) && Object.keys(res).length > 0
+    ? (res.answers ?? res.text ?? res.results ?? res.content ?? res)
+    : null;
   return (
     <div className="flex flex-col gap-2">
       <ShrunkNote value={req} maxJsonKB={maxJsonKB} />
@@ -180,9 +187,20 @@ function Messages({ detail, maxJsonKB }) {
       ) : (
         <Block key={i} role={m?.role || "unknown"} content={m?.content} toolCalls={m?.tool_calls} />
       ))}
+      {nonChatInput != null && (
+        <Block role="user" content={typeof nonChatInput === "string" ? nonChatInput : pretty(nonChatInput)} />
+      )}
+      {nonChatQuestions && (
+        <Block role="system" content={pretty(nonChatQuestions)} />
+      )}
       {hasOut && <Block role="assistant" content={res.content} thinking={res.thinking} toolCalls={res.tool_calls} />}
+      {nonChatOutput != null && (
+        <Block role="assistant" content={typeof nonChatOutput === "string" ? nonChatOutput : pretty(nonChatOutput)} />
+      )}
       {isTruncated(res) && <TruncatedNote value={res} maxJsonKB={maxJsonKB} />}
-      {!msgs.length && !hasOut && <div className="text-xs text-text-muted">No messages captured.</div>}
+      {!msgs.length && nonChatInput == null && !hasOut && nonChatOutput == null && (
+        <div className="text-xs text-text-muted">No messages captured.</div>
+      )}
     </div>
   );
 }

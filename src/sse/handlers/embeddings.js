@@ -15,6 +15,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { recordMediaRequestDetail, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -124,6 +125,7 @@ export async function handleEmbeddings(request) {
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const attemptStart = Date.now();
 
     const result = await handleEmbeddingsCore({
       body: { ...body, model: `${provider}/${model}` },
@@ -144,6 +146,18 @@ export async function handleEmbeddings(request) {
 
     if (result.success) {
       const usage = exactEmbeddingUsage(result.usage);
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        status: "success",
+        startedAt: attemptStart,
+        tokens: usage || result.usage,
+        request: body,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
       if (usage) {
         saveRequestUsage({
           provider,
@@ -157,6 +171,18 @@ export async function handleEmbeddings(request) {
       }
       return result.response;
     }
+
+    const errPayload = await summarizeMediaResponse(result.response);
+    recordMediaRequestDetail({
+      provider,
+      model,
+      connectionId: credentials.connectionId,
+      status: "error",
+      startedAt: attemptStart,
+      request: body,
+      providerResponse: errPayload,
+      response: result.error ? { error: result.error } : errPayload,
+    });
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

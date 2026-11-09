@@ -2,6 +2,7 @@ import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
+import { recordMediaRequestDetail, recordMediaUsage, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 import {
   DEFAULT_SYSTEMONE_ROUTER_MODEL,
   DEFAULT_SYSTEMONE_TIMEOUT_MS,
@@ -88,6 +89,7 @@ export async function resolveSmartChoice({
       onRequestSuccess: () => {},
     });
 
+    const attemptStart = Date.now();
     let result;
     try {
       result = await Promise.race([corePromise, timeoutPromise]);
@@ -97,10 +99,41 @@ export async function resolveSmartChoice({
 
     if (!result?.success || !result.response) {
       log?.warn?.("COMBO", `smart-router: evaluation failed (${result?.status || "error"})`);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        status: "error",
+        startedAt: attemptStart,
+        request: systemoneBody,
+        response: { error: result?.error || `status ${result?.status || "error"}` },
+      });
       return null;
     }
 
     const json = await result.response.json();
+    recordMediaRequestDetail({
+      provider,
+      model,
+      connectionId: credentials.connectionId,
+      status: "success",
+      startedAt: attemptStart,
+      tokens: result.usage,
+      request: systemoneBody,
+      providerResponse: json,
+      response: json,
+    });
+    if (result.usage) {
+      recordMediaUsage({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        endpoint: "/v1/systemone",
+        startedAt: attemptStart,
+        tokens: result.usage,
+        status: "success",
+      });
+    }
     const route = parseSystemOneRouteAnswer(json);
     if (!route || !route.choice) {
       log?.warn?.("COMBO", "smart-router: response missing valid route choice");

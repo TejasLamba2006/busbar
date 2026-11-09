@@ -13,6 +13,7 @@ import { AI_PROVIDERS, isOpenAICompatibleProvider } from "@/shared/constants/pro
 import * as log from "../utils/logger.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy.js";
+import { recordMediaRequestDetail, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -76,12 +77,41 @@ export async function handleStt(request) {
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   const modelTransport = await resolveCustomModelTransport(provider, model);
+  const fileEntry = formData.get("file");
+  const sttRequestPayload = {
+    model: modelStr,
+    file: fileEntry?.name || "audio",
+    ...(fileEntry?.size != null ? { bytes: fileEntry.size } : {}),
+    ...(formData.get("language") ? { language: formData.get("language") } : {}),
+    ...(formData.get("prompt") ? { prompt: formData.get("prompt") } : {}),
+  };
 
   // noAuth providers. Custom compatible nodes always need their stored API key
   // and endpoint metadata.
   if (!CREDENTIALED_PROVIDERS.has(provider) && !isOpenAICompatibleProvider(provider)) {
+    const attemptStart = Date.now();
     const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig, transport: modelTransport });
-    if (result.success) return result.response;
+    if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        status: "success",
+        startedAt: attemptStart,
+        request: sttRequestPayload,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
+      return result.response;
+    }
+    recordMediaRequestDetail({
+      provider,
+      model,
+      status: "error",
+      startedAt: attemptStart,
+      request: sttRequestPayload,
+      response: { error: result.error || "STT failed" },
+    });
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
   }
 
@@ -111,6 +141,7 @@ export async function handleStt(request) {
     } catch (error) {
       return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
     }
+    const attemptStart = Date.now();
     let result;
     try {
       const isOAuthStt = provider === "codex" || provider === "claude";
@@ -127,11 +158,41 @@ export async function handleStt(request) {
       }
       if (result.success) {
         if (isOAuthStt) await clearAccountError(credentials.connectionId, credentials, model);
+        const responsePayload = await summarizeMediaResponse(result.response);
+        recordMediaRequestDetail({
+          provider,
+          model,
+          connectionId: credentials.connectionId,
+          status: "success",
+          startedAt: attemptStart,
+          request: sttRequestPayload,
+          providerResponse: responsePayload,
+          response: responsePayload,
+        });
         return result.response;
       }
     } catch {
+      recordMediaRequestDetail({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        status: "error",
+        startedAt: attemptStart,
+        request: sttRequestPayload,
+        response: { error: "STT credential or transport failure" },
+      });
       return errorResponse(HTTP_STATUS.BAD_GATEWAY, "STT credential or transport failure");
     }
+
+    recordMediaRequestDetail({
+      provider,
+      model,
+      connectionId: credentials.connectionId,
+      status: "error",
+      startedAt: attemptStart,
+      request: sttRequestPayload,
+      response: { error: result.error || `HTTP ${result.status || 502}` },
+    });
 
     if (request.signal.aborted) return errorResponse(504, "Transcription cancelled");
     // Bad audio / unsupported parameters are client errors, not broken accounts.

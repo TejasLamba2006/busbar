@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { getRequestDetailById } from "@/lib/db/repos/requestDetailsRepo.js";
+import { getAdapter } from "@/lib/db/driver.js";
+import { createPricingResolver } from "@/lib/db/repos/pricingRepo.js";
+import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +36,21 @@ export async function GET(_request, { params }) {
     const { id } = await params;
     const detail = await getRequestDetailById(id);
     if (!detail) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json({ detail: capDetail(detail) });
+    let cost = detail.cost;
+    if (typeof cost !== "number" || !Number.isFinite(cost)) {
+      const mediaCost = detail.response?.usage?.search_cost_usd ?? detail.response?.usage?.fetch_cost_usd;
+      if (typeof mediaCost === "number" && Number.isFinite(mediaCost)) {
+        cost = mediaCost;
+      } else {
+        const [db, resolvePricing] = await Promise.all([
+          getAdapter().catch(() => null),
+          createPricingResolver().catch(() => null),
+        ]);
+        const rates = db && resolvePricing ? resolvePricing(db, detail.provider, detail.model) : null;
+        cost = rates ? calculateCostFromTokens(detail.tokens || {}, rates) : 0;
+      }
+    }
+    return NextResponse.json({ detail: capDetail({ ...detail, cost }) });
   } catch (error) {
     console.error("[API ERROR] /api/usage/request-log/[id] GET failed:", error);
     return NextResponse.json({ error: "Failed to fetch request detail" }, { status: 500 });

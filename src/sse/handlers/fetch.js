@@ -15,6 +15,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
+import { recordMediaRequestDetail } from "../utils/mediaRequestLog.js";
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -143,6 +144,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   // No-auth fetch path (kept for parity though no current fetch provider sets noAuth)
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
+    const attemptStart = Date.now();
     const result = await handleFetchCore({
       url: targetUrl,
       format,
@@ -151,6 +153,15 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       providerConfig,
       credentials: null,
       log
+    });
+    recordMediaRequestDetail({
+      provider: providerId,
+      model: "fetch",
+      status: result.success ? "success" : "error",
+      startedAt: attemptStart,
+      request: { url: targetUrl, format, max_characters: maxCharacters },
+      providerResponse: result.data || { error: result.error },
+      response: result.data || { error: result.error },
     });
     if (result.success) {
       return new Response(JSON.stringify(result.data), {
@@ -191,6 +202,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
     log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
+    const attemptStart = Date.now();
 
     const result = await handleFetchCore({
       url: targetUrl,
@@ -210,6 +222,16 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       }
     });
 
+    recordMediaRequestDetail({
+      provider: providerId,
+      model: "fetch",
+      connectionId: credentials.connectionId,
+      status: result.success ? "success" : "error",
+      startedAt: attemptStart,
+      request: { url: targetUrl, format, max_characters: maxCharacters },
+      providerResponse: result.data || { error: result.error },
+      response: result.data || { error: result.error },
+    });
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, fetchLockKey);
       return new Response(JSON.stringify(result.data), {

@@ -1,3 +1,12 @@
+# v1.0.61
+
+## Features
+- **Request logs**: log SystemOne (`jev-*`), image, TTS, STT, embedding, video, web search, and web fetch requests to `requestDetails`, so they appear in Dashboard Logs -> Requests with previews and payload inspection.
+- **Request costs**: show per-request cost in the Requests log table and detail drawer.
+
+## Fixes
+- **`/v1/models`**: stop treating non-client API keys (`clientEmail: null`) as client keys, so Master provider connections are no longer hidden.
+
 # v1.0.60
 
 ## Fixes

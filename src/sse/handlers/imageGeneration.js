@@ -17,6 +17,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { recordMediaRequestDetail, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
@@ -107,13 +108,34 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
+    const attemptStart = Date.now();
     const result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
       credentials: null,
       binaryOutput,
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        status: "success",
+        startedAt: attemptStart,
+        request: body,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
+      return result.response;
+    }
+    recordMediaRequestDetail({
+      provider,
+      model,
+      status: "error",
+      startedAt: attemptStart,
+      request: body,
+      response: { error: result.error || "Image generation failed" },
+    });
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Image generation failed");
   }
 
@@ -150,6 +172,8 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       continue;
     }
 
+    let capturedUsage = null;
+    const attemptStart = Date.now();
     const result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
@@ -165,6 +189,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
         });
       },
       onUsage: (usage) => {
+        capturedUsage = usage;
         recordImageRequestUsage({
           provider,
           model,
@@ -184,7 +209,33 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        status: "success",
+        startedAt: attemptStart,
+        tokens: capturedUsage,
+        request: body,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
+      return result.response;
+    }
+
+    const errPayload = await summarizeMediaResponse(result.response);
+    recordMediaRequestDetail({
+      provider,
+      model,
+      connectionId: credentials.connectionId,
+      status: "error",
+      startedAt: attemptStart,
+      request: body,
+      providerResponse: errPayload,
+      response: result.error ? { error: result.error } : errPayload,
+    });
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

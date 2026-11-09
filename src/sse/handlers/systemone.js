@@ -14,7 +14,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { saveRequestUsage } from "@/lib/usageDb.js";
+import { recordMediaRequestDetail, recordMediaUsage, summarizeMediaResponse } from "../utils/mediaRequestLog.js";
 
 /**
  * Handle System One (Jev) decision requests for the Next.js server.
@@ -116,6 +116,7 @@ export async function handleSystemone(request) {
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const attemptStart = Date.now();
 
     const result = await handleSystemoneCore({
       body,
@@ -128,22 +129,47 @@ export async function handleSystemone(request) {
     });
 
     if (result.success) {
+      const responsePayload = await summarizeMediaResponse(result.response);
+      recordMediaRequestDetail({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        status: "success",
+        startedAt: attemptStart,
+        tokens: result.usage,
+        request: body,
+        providerResponse: responsePayload,
+        response: responsePayload,
+      });
       if (result.usage) {
-        saveRequestUsage({
+        recordMediaUsage({
           provider,
           model,
           connectionId: credentials.connectionId,
           apiKey,
           endpoint: url.pathname,
+          startedAt: attemptStart,
           tokens: {
             ...result.usage,
             total_tokens: result.usage.prompt_tokens + result.usage.completion_tokens,
           },
           status: "success",
-        }).catch(() => {});
+        });
       }
       return result.response;
     }
+
+    const errPayload = await summarizeMediaResponse(result.response);
+    recordMediaRequestDetail({
+      provider,
+      model,
+      connectionId: credentials.connectionId,
+      status: "error",
+      startedAt: attemptStart,
+      request: body,
+      providerResponse: errPayload,
+      response: result.error ? { error: result.error } : errPayload,
+    });
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

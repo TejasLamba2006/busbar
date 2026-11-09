@@ -41,6 +41,12 @@ function fmtRel(ts) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 const fmtNum = (n) => (n || 0).toLocaleString();
+function fmtCost(c) {
+  if (typeof c !== "number" || !Number.isFinite(c) || c <= 0) return "$0.00";
+  if (c >= 0.01) return `$${c.toFixed(4)}`;
+  if (c >= 0.0001) return `$${c.toFixed(5)}`;
+  return `$${c.toFixed(6)}`;
+}
 
 function StatusPill({ status }) {
   const ok = status === "success";
@@ -71,6 +77,9 @@ const Row = memo(function Row({ e, maxDur, onOpen }) {
       <td className="px-3 py-1.5 whitespace-nowrap font-mono text-text-main">
         {fmtNum(e.promptTokens)} / {fmtNum(e.completionTokens)}
         {e.cachedTokens > 0 && <div className="text-[10px] text-text-muted">{fmtNum(e.cachedTokens)} cached</div>}
+      </td>
+      <td className="px-3 py-1.5 whitespace-nowrap font-mono text-text-main">
+        {fmtCost(e.cost)}
       </td>
       <td className="px-3 py-1.5 min-w-[110px]">
         <div className="font-mono text-text-main">
@@ -150,6 +159,7 @@ function DetailBody({ id, maxJsonKB, onForbidden }) {
         <Chip label="in" value={fmtNum(tk.prompt_tokens)} />
         <Chip label="out" value={fmtNum(tk.completion_tokens)} />
         {tk.cached_tokens > 0 && <Chip label="cached" value={fmtNum(tk.cached_tokens)} />}
+        <Chip label="cost" value={fmtCost(detail.cost)} />
       </div>
       {tabs.length ? (
         <>
@@ -358,7 +368,7 @@ export default function RequestLogClient() {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-text-muted">
-                {["Time", "Status", "Provider / Model", "Tokens (in / out)", "Duration", "Preview"].map((h) => (
+                {["Time", "Status", "Provider / Model", "Tokens (in / out)", "Cost", "Duration", "Preview"].map((h) => (
                   <th key={h} className="px-3 py-2 font-medium">{h}</th>
                 ))}
               </tr>
@@ -367,7 +377,7 @@ export default function RequestLogClient() {
               {items.map((e) => <Row key={e.id} e={e} maxDur={maxDur} onOpen={setSelectedId} />)}
               {!items.length && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-text-muted">
+                  <td colSpan={7} className="px-3 py-10 text-center text-text-muted">
                     {loaded ? "No requests logged." : "Loading..."}
                   </td>
                 </tr>
