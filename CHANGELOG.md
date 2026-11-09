@@ -1,3 +1,8 @@
+# v1.0.60
+
+## Fixes
+- **STT (`cc/transcribe`)**: mark `ws` as a Next.js `serverExternalPackages` entry so webpack does not stub optional `bufferutil` / `utf-8-validate` addons and corrupt outgoing WebSocket frames (fixing close code `1006` in standalone builds).
+
 # v1.0.59
 
 ## Features
