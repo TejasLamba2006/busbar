@@ -238,6 +238,31 @@ describe("/api/usage/request-log GET: preview, hasPayload, cost", () => {
     expect(item.hasPayload).toBe(false);
     expect(item.preview).toBe("");
   });
+
+  it("canonicalizes Claude-format rawTokens into cache-inclusive prompt, output, cached and cost", async () => {
+    mocks.resolvePricing.mockImplementation((_db, provider, model) =>
+      provider === "anthropic" && model === "claude-x" ? JEV_RATES : null
+    );
+    mocks.listRequestLogRows.mockResolvedValue({
+      totalItems: 1,
+      rows: [{
+        ...baseRow,
+        id: "claude1",
+        provider: "anthropic",
+        model: "claude-x",
+        connectionId: "conn-cl",
+        rawTokens: JSON.stringify({ input_tokens: 100, output_tokens: 200, cache_read_input_tokens: 900 }),
+      }],
+    });
+
+    const res = await requestLogGET(new Request("http://localhost/api/usage/request-log"));
+    const [item] = (await res.json()).items;
+
+    expect(item.promptTokens).toBe(1000);
+    expect(item.completionTokens).toBe(200);
+    expect(item.cachedTokens).toBe(900);
+    expect(item.cost).toBeGreaterThan(0);
+  });
 });
 
 describe("handleSystemone saves request detail", () => {

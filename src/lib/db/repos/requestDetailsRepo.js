@@ -291,6 +291,7 @@ export async function listRequestLogRows({ page = 1, pageSize = 50, provider, mo
     `SELECT id, timestamp, provider, model, connectionId, status,
       json_extract(data,'$.latency.total') AS total,
       json_extract(data,'$.latency.ttft') AS ttft,
+      json_extract(data,'$.tokens') AS rawTokens,
       json_extract(data,'$.tokens.prompt_tokens') AS promptTokens,
       json_extract(data,'$.tokens.completion_tokens') AS completionTokens,
       json_extract(data,'$.tokens.cached_tokens') AS cachedTokens,

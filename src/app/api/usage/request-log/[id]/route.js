@@ -5,6 +5,7 @@ import { getRequestDetailById } from "@/lib/db/repos/requestDetailsRepo.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { createPricingResolver } from "@/lib/db/repos/pricingRepo.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
+import { canonicalizeUsage } from "open-sse/utils/usageTracking.js";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ export async function GET(_request, { params }) {
     const { id } = await params;
     const detail = await getRequestDetailById(id);
     if (!detail) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Raw Claude-format usage ({input_tokens, ...}) -> canonical so in/out/cached chips and cost work.
+    detail.tokens = canonicalizeUsage(detail.tokens) || detail.tokens || {};
     let cost = detail.cost;
     if (typeof cost !== "number" || !Number.isFinite(cost)) {
       const mediaCost = detail.response?.usage?.search_cost_usd ?? detail.response?.usage?.fetch_cost_usd;

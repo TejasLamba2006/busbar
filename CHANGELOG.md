@@ -1,3 +1,8 @@
+# v1.0.62
+
+## Fixes
+- **Request logs**: rows from Claude-format clients (`input_tokens` / `output_tokens` / `cache_read_input_tokens`) now store canonical token usage, so the Requests list and detail drawer report correct prompt, output and cached counts and cost instead of 0 tokens / $0.00.
+
 # v1.0.61
 
 ## Features

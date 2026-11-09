@@ -8,6 +8,7 @@ import {
 import { getAdapter } from "@/lib/db/driver.js";
 import { createPricingResolver } from "@/lib/db/repos/pricingRepo.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
+import { canonicalizeUsage } from "open-sse/utils/usageTracking.js";
 import { updateSettings } from "@/lib/db/repos/settingsRepo.js";
 import { logActivity } from "@/lib/activity.js";
 
@@ -51,6 +52,20 @@ function previewOf(messages, r = null) {
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
+// Rows from Claude-format clients store raw {input_tokens, output_tokens, cache_read_input_tokens};
+// canonicalize so promptTokens is cache-inclusive. Falls back to the column values when absent.
+function tokensOf(r) {
+  let raw = r.rawTokens;
+  if (typeof raw === "string") { try { raw = JSON.parse(raw); } catch { raw = null; } }
+  return canonicalizeUsage(raw) || {
+    prompt_tokens: r.promptTokens,
+    completion_tokens: r.completionTokens,
+    cached_tokens: r.cachedTokens,
+    reasoning_tokens: r.reasoningTokens,
+    cache_creation_input_tokens: r.cacheCreationTokens,
+  };
+}
+
 export async function GET(request) {
   try {
     const denied = await masterOnly();
@@ -72,11 +87,12 @@ export async function GET(request) {
       if (typeof messages === "string") { try { messages = JSON.parse(messages); } catch { messages = null; } }
       const total = num(r.total);
       const ttft = num(r.ttft);
-      const promptTokens = num(r.promptTokens);
-      const completionTokens = num(r.completionTokens);
-      const cachedTokens = num(r.cachedTokens);
-      const reasoningTokens = num(r.reasoningTokens);
-      const cacheCreationTokens = num(r.cacheCreationTokens);
+      const tok = tokensOf(r);
+      const promptTokens = num(tok.prompt_tokens);
+      const completionTokens = num(tok.completion_tokens);
+      const cachedTokens = num(tok.cached_tokens);
+      const reasoningTokens = num(tok.reasoning_tokens);
+      const cacheCreationTokens = num(tok.cache_creation_input_tokens);
       let cost = typeof r.mediaCost === "number" && Number.isFinite(r.mediaCost) ? r.mediaCost : 0;
       if (!cost && db && resolvePricing && (promptTokens > 0 || completionTokens > 0)) {
         const rates = resolvePricing(db, r.provider, r.model);
