@@ -1,3 +1,8 @@
+# v1.0.59
+
+## Features
+- **STT**: add Claude Code OAuth voice dictation (`cc/transcribe`, `claude/transcribe`) on `/v1/audio/transcriptions`, reusing existing Claude Code OAuth connections over Anthropic's `voice_stream` WebSocket with 16 kHz PCM16 conversion, automatic token refresh, 20-language support, keyterms prompt mapping, and `json` / `text` / `verbose_json` output formats.
+
 # v1.0.58
 
 ## Upstream integration

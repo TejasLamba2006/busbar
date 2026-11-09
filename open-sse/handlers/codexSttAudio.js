@@ -31,24 +31,25 @@ export async function readBounded(stream, limit, signal, oversizedStatus = 413) 
   }
 }
 
-export async function convertAudio(file, signal) {
+export async function convertAudioToPcm16(file, signal, sampleRate = 24000) {
+  const maxPcmBytes = MAX_AUDIO_SECONDS * sampleRate * 2;
   const directory = await mkdtemp(join(tmpdir(), "9router-codex-stt-"));
   try {
     const input = join(directory, "input");
     await writeFile(input, Buffer.from(await file.arrayBuffer()), { mode: 0o600 });
-    const pcm = await new Promise((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       const child = spawn("ffmpeg", [
         "-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1",
         "-protocol_whitelist", "file,pipe", "-format_whitelist", "wav,mp3,mov,matroska,webm,ogg,flac,aac",
         "-i", input, "-map", "0:a:0", "-vn", "-t", String(MAX_AUDIO_SECONDS + 0.01),
-        "-threads", "1", "-ac", "1", "-ar", "24000", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1",
+        "-threads", "1", "-ac", "1", "-ar", String(sampleRate), "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1",
       ], { stdio: ["ignore", "pipe", "ignore"], signal, timeout: 15000, killSignal: "SIGKILL" });
       const chunks = [];
       let size = 0;
       let tooLong = false;
       child.stdout.on("data", (chunk) => {
         size += chunk.length;
-        if (size > MAX_PCM_BYTES) { tooLong = true; child.kill("SIGKILL"); }
+        if (size > maxPcmBytes) { tooLong = true; child.kill("SIGKILL"); }
         else chunks.push(chunk);
       });
       child.on("error", (error) => reject(failure(error.code === "ENOENT" ? 503 : 504, error.code === "ENOENT" ? "ffmpeg is required for transcription" : "Audio conversion timed out")));
@@ -58,13 +59,17 @@ export async function convertAudio(file, signal) {
         else resolve(Buffer.concat(chunks, size));
       });
     });
-    const wav = Buffer.alloc(44 + pcm.length);
-    wav.write("RIFF"); wav.writeUInt32LE(wav.length - 8, 4); wav.write("WAVEfmt ", 8);
-    wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
-    wav.writeUInt32LE(24000, 24); wav.writeUInt32LE(48000, 28); wav.writeUInt16LE(2, 32);
-    wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(pcm.length, 40); pcm.copy(wav, 44);
-    return new Blob([wav], { type: "audio/wav" });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+export async function convertAudio(file, signal) {
+  const pcm = await convertAudioToPcm16(file, signal, 24000);
+  const wav = Buffer.alloc(44 + pcm.length);
+  wav.write("RIFF"); wav.writeUInt32LE(wav.length - 8, 4); wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(24000, 24); wav.writeUInt32LE(48000, 28); wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(pcm.length, 40); pcm.copy(wav, 44);
+  return new Blob([wav], { type: "audio/wav" });
 }

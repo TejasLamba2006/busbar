@@ -15,6 +15,9 @@ export default {
     },
     deprecated: true,
     deprecationNotice: "RISK_NOTICE",
+    kindNotice: {
+      stt: "Uses the same Claude Code OAuth connection as chat, not an Anthropic API key. Requires ffmpeg; maximum 25 MiB and 120 seconds. Supports language, prompt (mapped to keyterms), and json/text/verbose_json response formats via Anthropic's voice_stream WebSocket.",
+    },
   },
   category: "oauth",
   modelDiscovery: "refresh",
@@ -67,7 +70,14 @@ export default {
     { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" },
     { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
+    { id: "transcribe", name: "Claude Voice Dictation", kind: "stt", params: ["language", "prompt", "response_format"], responseFormats: ["json", "text", "verbose_json"] },
   ],
+  serviceKinds: ["llm", "stt"],
+  sttConfig: {
+    baseUrl: "wss://api.anthropic.com/api/ws/speech_to_text/voice_stream",
+    authType: "oauth",
+    format: "claude-transcribe",
+  },
   oauth: {
     clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     authorizeUrl: "https://claude.ai/oauth/authorize",

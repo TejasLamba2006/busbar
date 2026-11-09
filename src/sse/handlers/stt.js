@@ -65,6 +65,7 @@ export async function handleStt(request) {
 
   const { provider, model } = modelInfo;
   if (provider === "codex" && model !== "transcribe") return errorResponse(400, "Use model cx/transcribe for Codex STT");
+  if (provider === "claude" && model !== "transcribe") return errorResponse(400, "Use model cc/transcribe for Claude STT");
 
   // Per-key access control: checked before any credential lookup.
   const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
@@ -112,20 +113,20 @@ export async function handleStt(request) {
     }
     let result;
     try {
-      const isCodex = provider === "codex";
-      if (isCodex) credentials = await checkAndRefreshToken(provider, credentials);
-      const proxyOptions = isCodex
+      const isOAuthStt = provider === "codex" || provider === "claude";
+      if (isOAuthStt) credentials = await checkAndRefreshToken(provider, credentials);
+      const proxyOptions = isOAuthStt
         ? await resolveConnectionProxyConfig(credentials._connection?.providerSpecificData || credentials.providerSpecificData)
         : undefined;
       const args = { provider, model, formData, credentials, sttConfig, transport: modelTransport, signal: request.signal, proxyOptions };
       result = await handleSttCore(args);
-      if (isCodex && result.status === 401 && credentials.refreshToken && !request.signal.aborted) {
+      if (isOAuthStt && result.status === 401 && credentials.refreshToken && !request.signal.aborted) {
         const previous = credentials.accessToken;
         credentials = await checkAndRefreshToken(provider, credentials, { force: true });
         if (credentials.accessToken !== previous) result = await handleSttCore({ ...args, credentials });
       }
       if (result.success) {
-        if (isCodex) await clearAccountError(credentials.connectionId, credentials, model);
+        if (isOAuthStt) await clearAccountError(credentials.connectionId, credentials, model);
         return result.response;
       }
     } catch {
@@ -134,7 +135,7 @@ export async function handleStt(request) {
 
     if (request.signal.aborted) return errorResponse(504, "Transcription cancelled");
     // Bad audio / unsupported parameters are client errors, not broken accounts.
-    if (provider === "codex" && [400, 413, 504].includes(result.status)) {
+    if ((provider === "codex" || provider === "claude") && [400, 413, 504].includes(result.status)) {
       return result.response || errorResponse(result.status, result.error);
     }
 
