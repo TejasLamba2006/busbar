@@ -1,3 +1,23 @@
+# v1.0.64
+
+## Upstream port (v0.5.113–v0.5.116)
+- **proxyFetch**: stop reusing dead keep-alive sockets that upstream edges drop silently (NVIDIA NIM / Cloudflare ~249s hang fix)
+- **thinking**: preserve explicit DeepSeek thinking budgets on compat nodes; preserve intent on OpenAI tool-result turns
+- **translator**: preserve all Gemini tool results and follow-up parts; retain Claude cache markers for DashScope; send concrete MIME for remote Gemini images
+- **opencode-go**: use current inference endpoint; use Claude reasoning on Messages transport
+- **opencode**: alias declared tool names containing "terminal" on free tier (fix FreeUsageLimitError 429)
+- **codex-image**: add GPT Image 2.6 models; handle upstream tool failures properly; use native OAuth image generation safely
+- **commandcode**: align data bridge with CLI v1.88.5; add CLI auto-import
+- **codebuddy-intl**: preserve client system prompts and sanitize CLI agent identity
+- **kiro**: stop splicing unserved regions into service hostnames
+- **runtime**: keep named exports when loading CJS deps from runtime dir; keep installs local during global npm hooks
+- **dedupe**: drop tool_reference blocks naming stripped tools (fix z.ai 400 on Exa/Tavily MCP)
+- **antigravity**: track and display separate Gemini 4 Argon quota
+- **tts**: list public voices without dashboard self-fetch auth
+- **sensenova**: add sensenova-6.8-flash and glm-5.3 models
+- **cli**: ship deepseek-pow-hash.js next to PoW worker; cut launcher startup ~2.5x; survive DPI-shaped networks on claude provider; report tray that never started instead of claiming success
+- **cli-tools**: include no-auth, alias and custom models in Add All Active Models
+
 # v1.0.63
 
 ## Fixes
