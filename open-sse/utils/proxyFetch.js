@@ -9,6 +9,7 @@ import {
   isFreshSocketReplayEnabled,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { recordProxyLog, maskProxyUrl, hostOf } from "../../src/lib/proxyLogBuffer.js";
 
 const proxyDispatchers = new Map();
 const directDispatchers = new Map();
@@ -340,7 +341,8 @@ async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = fals
     const dispatcher = new ProxyAgent({
       uri: normalized,
       connect: EYEBALLS_CONNECT,
-      requestTls: { ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) },
+      // ponytail: no ecdhCurve here — Azure (*.cognitiveservices.azure.com) rejects X25519 (needs P-256).
+      ...(insecure ? { requestTls: { rejectUnauthorized: false } } : {}),
     });
     proxyDispatchers.set(key, dispatcher);
   }
@@ -448,7 +450,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
-export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+async function proxyAwareFetchInner(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers
@@ -528,6 +530,38 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // got-scraping disabled — use native fetch directly
   // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
   return fetchWithTlsFallback(url, options, null, forceFreshSocket);
+}
+
+/**
+ * Thin logging wrapper: records only proxied traffic (relay / connection / env).
+ * Direct traffic calls inner untouched. Never reads the body, never alters the response.
+ */
+export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  const targetUrl = typeof url === "string" ? url : url.toString();
+  let via = null;
+  let proxy = "";
+  const relay = normalizeString(proxyOptions?.vercelRelayUrl);
+  if (relay) { via = "relay"; proxy = relay; }
+  else {
+    const conn = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+    if (conn) { via = "connection"; proxy = conn; }
+    else {
+      const env = normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+      if (env) { via = "env"; proxy = env; }
+    }
+  }
+  if (!via) return proxyAwareFetchInner(url, options, proxyOptions);
+
+  const base = { via, proxy: maskProxyUrl(proxy), host: hostOf(targetUrl), connectionId: proxyOptions?.connectionId ?? null };
+  const t0 = Date.now();
+  try {
+    const res = await proxyAwareFetchInner(url, options, proxyOptions);
+    recordProxyLog({ ...base, status: res.status, ok: res.ok, latencyMs: Date.now() - t0 });
+    return res;
+  } catch (err) {
+    recordProxyLog({ ...base, status: null, ok: false, error: err?.message || String(err), latencyMs: Date.now() - t0 });
+    throw err;
+  }
 }
 
 /**

@@ -34,7 +34,9 @@ function getCreateRequire() {
 
 function isModuleMissing(error) {
   const code = String(error?.code || "");
-  return code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND";
+  if (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") return true;
+  const msg = String(error?.message || "");
+  return /Cannot find module|Cannot find package|resolve/i.test(msg);
 }
 
 function npmInstall(pkg, version) {

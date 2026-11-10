@@ -1,4 +1,9 @@
-# v1.0.64
+# 1.0.65 (2026-11-11)
+
+## Fixes
+- **Restored after `v1.0.64` conflict resolution**: `chatCore.js` non-streaming JSON fallback (`upstreamCt.includes("application/json")`), `DefaultExecutor` OpenAI/Responses/tool sanitizers, `BaseExecutor` proxy pool candidate rotation, `proxyFetch.js` proxy log buffer, `AddApiKeyModal.js` Bedrock bearer/AgentRouter/Qwen-Web forms, `testUtils.js` SystemOne/Freebuff probes, and `validate/route.js` web identity & SystemOne probes.
+- **Model probe**: fix `502 · openai/gpt-6-luna — Unexpected non-whitespace character after JSON at position 793 (line 37 column 1)` when probing models from the UI.
+- **Azure over HTTP proxy**: fix `[ProxyFetch] Proxy required but failed (strictProxy=true): fetch failed` on Azure connections via `callkaro-socks-http` by omitting single-curve `X25519` `requestTls.ecdhCurve` on `ProxyAgent` (Azure requires P-256 negotiation).
 
 ## Upstream port (v0.5.113–v0.5.116)
 - **proxyFetch**: stop reusing dead keep-alive sockets that upstream edges drop silently (NVIDIA NIM / Cloudflare ~249s hang fix)

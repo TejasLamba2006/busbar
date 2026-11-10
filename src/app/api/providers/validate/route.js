@@ -12,6 +12,7 @@ import {
   getNousApiKeyValidationError,
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
+import { hasWebIdentityProbe, fetchWebIdentity } from "open-sse/services/webIdentity.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -49,25 +50,25 @@ async function probeWebProvider(provider, apiKey) {
   return res.status !== 401 && res.status !== 403;
 }
 
-// Probe a media provider (tts/embedding/stt/image/video) using *Config.
+// Probe a media provider (tts/embedding/stt/image/video/systemone) using *Config.
 // Returns true if API key is accepted; null to skip (let default handler decide).
 async function probeMediaProvider(provider, apiKey) {
   const p = AI_PROVIDERS[provider];
   if (!p) return null;
-  const MEDIA_KINDS = new Set(["tts", "embedding", "stt", "image", "video", "music", "imageToText"]);
+  const MEDIA_KINDS = new Set(["tts", "embedding", "stt", "image", "video", "music", "imageToText", "systemone"]);
   const kinds = p.serviceKinds || ["llm"];
   const isMediaOnly = kinds.every((k) => MEDIA_KINDS.has(k));
   if (!isMediaOnly) return null;
-  const cfg = p.ttsConfig || p.sttConfig || p.embeddingConfig || p.imageConfig || p.videoConfig || p.musicConfig;
+  const cfg = p.ttsConfig || p.sttConfig || p.embeddingConfig || p.imageConfig || p.videoConfig || p.musicConfig || p.systemoneConfig;
   // No probe config → best-effort accept (validate at usage time)
   if (!cfg) return true;
   if (p.noAuth || cfg.authType === "none") return true;
   // Skip auth schemes that need provider-specific data
   if (cfg.authHeader === "playht" || cfg.authHeader === "aws-sigv4") return true;
 
-  const headers = { "Content-Type": "application/json", ...(cfg.extraHeaders || {}) };
+  const headers = { "Content-Type": "application/json", ...(cfg.extraHeaders || cfg.headers || {}) };
 
-  switch (cfg.authHeader) {
+  switch (cfg.authHeader || "bearer") {
     case "bearer":     headers["Authorization"] = `Bearer ${apiKey}`; break;
     case "key":        headers["Authorization"] = `Key ${apiKey}`; break;
     case "x-api-key":  headers["x-api-key"] = apiKey; break;
@@ -78,11 +79,20 @@ async function probeMediaProvider(provider, apiKey) {
     default: return null;
   }
 
+  if (cfg.validateUrl) {
+    const res = await fetch(cfg.validateUrl, { method: "GET", headers, signal: AbortSignal.timeout(8000) });
+    return res.status !== 401 && res.status !== 403;
+  }
+
+  const isSystemOne = kinds.includes("systemone") && cfg === p.systemoneConfig;
   const method = cfg.method || "POST";
+  const probeBody = isSystemOne
+    ? { model: getDefaultModel(provider) || "jev-latest", state: "ping", questions: { q: { type: "noul", instructions: "Is this a ping?" } } }
+    : { input: "ping", text: "ping", prompt: "ping", model: getDefaultModel(provider) || "test" };
   const res = await fetch(cfg.baseUrl, {
     method,
     headers,
-    body: method === "GET" ? undefined : JSON.stringify({ input: "ping", text: "ping", prompt: "ping", model: getDefaultModel(provider) || "test" }),
+    body: method === "GET" ? undefined : JSON.stringify(probeBody),
     signal: AbortSignal.timeout(8000),
   });
   return res.status !== 401 && res.status !== 403;
@@ -251,6 +261,18 @@ export async function POST(request) {
         return NextResponse.json(await probeBedrockCredentials({ apiKey, providerSpecificData }, fetch));
       }
 
+      // Web-cookie providers with an identity probe (qwen-web, deepseek-web, chatgpt-web, etc.)
+      if (hasWebIdentityProbe(provider)) {
+        const identity = await fetchWebIdentity(provider, apiKey || "");
+        if (identity.status === "valid") {
+          return NextResponse.json({ valid: true, error: null });
+        }
+        if (identity.status === "invalid") {
+          return NextResponse.json({ valid: false, error: identity.error || "Invalid session token" });
+        }
+        return NextResponse.json({ valid: true, error: null });
+      }
+
       // Generic probe for webSearch/webFetch providers (config-driven)
       const webResult = await probeWebProvider(provider, apiKey);
       if (webResult !== null) {
@@ -329,12 +351,24 @@ export async function POST(request) {
         case "glm":
         case "glm-cn":
         case "kimi":
+        case "agentrouter": {
+          const cfg = PROVIDERS[provider];
+          const res = await fetch(cfg?.validateUrl || "https://agentrouter.org/v1/models", {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json",
+              ...(cfg?.headers || {}),
+            },
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
         case "minimax":
         case "minimax-cn":
         case "alicode-intl":
         case "alims-intl":
-        case "alicode":
-        case "agentrouter": {
+        case "alicode": {
           // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
           const cfg = PROVIDERS[provider];
           const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "alims-intl";
@@ -399,10 +433,10 @@ export async function POST(request) {
         case "assemblyai":
         case "nanobanana":
         case "chutes":
-        case "runcrate":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
-        case "nvidia": {
+        case "nvidia":
+        case "runcrate": {
           const endpoints = {
             ...Object.fromEntries(
               Object.entries(PROVIDERS).filter(([, t]) => t.validateUrl).map(([id, t]) => [id, t.validateUrl])

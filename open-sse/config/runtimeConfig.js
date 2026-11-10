@@ -60,8 +60,19 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Env: EMPTY_PEEK_DEADLINE_MS.
 export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000);
 
-// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
+// 90s gives large-context (500k–1M token) cold prefills headroom while staying inside
+// Cloudflare's 100s–120s origin response timeout window.
+export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 90 * 1000);
+
+// SSE keepalive heartbeat interval (ms) so reverse proxies (Cloudflare/nginx) never close
+// long-running reasoning streams with 524 during silent thinking stretches.
+export const STREAM_KEEPALIVE_INTERVAL_MS = envMs("STREAM_KEEPALIVE_INTERVAL_MS", 15 * 1000);
+
+// If a streaming request has produced no response after this long, commit a 200 SSE response
+// and send keepalives so Cloudflare does not 524 (100-120s origin limit) on huge prompts.
+// 0 disables. Env: STREAM_EARLY_COMMIT_MS.
+export const STREAM_EARLY_COMMIT_MS = envMs("STREAM_EARLY_COMMIT_MS", 20 * 1000);
 
 // Keep-alive socket TTL. Cap it below upstream/edge idle windows (Cloudflare, AWS Global
 // Accelerator / NVIDIA NIM) that drop idle sockets without a TCP RST. keepAliveMaxTimeout is
