@@ -5,7 +5,7 @@
 
 // Map of CLI tool identifiers to provider IDs they are "native" to
 const NATIVE_PAIRS = {
-  "claude": ["claude", "anthropic"],
+  "claude": ["claude", "anthropic", "bedrock", "bedrock-xai"],
   "gemini-cli": ["gemini-cli"],
   "antigravity": ["antigravity"],
   "codex": ["codex"],
