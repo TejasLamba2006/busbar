@@ -1,3 +1,8 @@
+# v1.0.63
+
+## Fixes
+- **Bedrock**: treat Bedrock and Bedrock-xAI as native Claude passthrough so `normalizeClaudePassthrough` runs, stripping empty thinking blocks that cause 400 "each thinking block must contain non-whitespace thinking" on long conversations.
+
 # v1.0.62
 
 ## Fixes
