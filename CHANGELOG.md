@@ -1,3 +1,8 @@
+# 1.0.66 (2026-11-13)
+
+## Added
+- **CrowLLM provider** (`crowllm`, `CrowLLM`): free-tier OpenAI-compatible provider at `https://crowllm.com/v1/chat/completions`, with 78 pre-populated free models (`crow-uncensored:free`, `crow-limitless:free`, `crow-code-limitless:free`, etc.). Default model is `crow-uncensored:free`. Live catalog discovery via `/v1/models`, `passthroughModels: true`, and official provider icon (`public/providers/crowllm.png`).
+
 # 1.0.65 (2026-11-11)
 
 ## Fixes

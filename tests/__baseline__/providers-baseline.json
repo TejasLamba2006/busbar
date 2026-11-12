@@ -2191,5 +2191,10 @@
     "baseUrl": "https://api.runcrate.ai/v1/chat/completions",
     "validateUrl": "https://www.runcrate.ai/api/v1/billing/balance",
     "format": "openai"
+  },
+  "crowllm": {
+    "baseUrl": "https://crowllm.com/v1/chat/completions",
+    "validateUrl": "https://crowllm.com/v1/models",
+    "format": "openai"
   }
 }
