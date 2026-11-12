@@ -35,6 +35,7 @@ import {
 } from "@/shared/constants/keyAccess.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { enforceKeyLimits } from "./keyLimits.js";
 import * as log from "../utils/logger.js";
 
 export { ENDPOINT_SCOPES };
@@ -77,9 +78,11 @@ export async function getKeyAccessContext(request) {
   const record = await getApiKeyByKey(apiKey);
   const allowedEndpoints = record?.allowedEndpoints || [];
   const modelRestricted = !!record?.access?.restricted;
-  if (!modelRestricted && allowedEndpoints.length === 0) return null;
+  const hasLimits = record?.limits?.maxBudgetUsd != null || record?.limits?.maxRequestsPerMinute != null;
+  if (!modelRestricted && allowedEndpoints.length === 0 && !hasLimits) return null;
   return {
     keyId: record.id,
+    keyRecord: record,
     keyName: record.name || record.id,
     modelRestricted,
     allow: record.access?.allow || [],
@@ -202,6 +205,8 @@ export async function enforceKeyAccess(ctx, requested) {
   if (!ctx) return null;
   const endpointDenied = enforceEndpointAccess(ctx);
   if (endpointDenied) return endpointDenied;
+  const limitDenied = await enforceKeyLimits(ctx.keyRecord);
+  if (limitDenied) return limitDenied;
   if (!ctx.modelRestricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
@@ -222,6 +227,8 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   if (!ctx) return null;
   const endpointDenied = enforceEndpointAccess(ctx);
   if (endpointDenied) return endpointDenied;
+  const limitDenied = await enforceKeyLimits(ctx.keyRecord);
+  if (limitDenied) return limitDenied;
   if (!ctx.modelRestricted) return null;
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
@@ -237,6 +244,8 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx) return null;
   const endpointDenied = enforceEndpointAccess(ctx);
   if (endpointDenied) return endpointDenied;
+  const limitDenied = await enforceKeyLimits(ctx.keyRecord);
+  if (limitDenied) return limitDenied;
   if (!ctx.modelRestricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);

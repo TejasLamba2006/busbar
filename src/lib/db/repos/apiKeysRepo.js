@@ -15,8 +15,22 @@ function parseJsonObject(val) {
   }
 }
 
+export function normalizeKeyLimits(raw) {
+  if (!raw || typeof raw !== "object") return { maxBudgetUsd: null, budgetResetPeriod: "daily", maxRequestsPerMinute: null };
+  const maxBudgetUsd = raw.maxBudgetUsd != null && raw.maxBudgetUsd !== "" && Number.isFinite(Number(raw.maxBudgetUsd)) && Number(raw.maxBudgetUsd) >= 0
+    ? Number(raw.maxBudgetUsd)
+    : null;
+  const budgetResetPeriod = ["daily", "monthly", "total"].includes(raw.budgetResetPeriod) ? raw.budgetResetPeriod : "daily";
+  const maxRequestsPerMinute = raw.maxRequestsPerMinute != null && raw.maxRequestsPerMinute !== "" && Number.isFinite(Number(raw.maxRequestsPerMinute)) && Number(raw.maxRequestsPerMinute) > 0
+    ? Math.floor(Number(raw.maxRequestsPerMinute))
+    : null;
+  return { maxBudgetUsd, budgetResetPeriod, maxRequestsPerMinute };
+}
+
 function rowToKey(row) {
   if (!row) return null;
+  const tokenSaverSettings = parseJsonObject(row.tokenSaverSettings);
+  const limits = normalizeKeyLimits(tokenSaverSettings._limits);
   return {
     id: row.id,
     key: row.key,
@@ -27,7 +41,8 @@ function rowToKey(row) {
     access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
     allowedEndpoints: endpointsFromColumn(row.allowedEndpoints),
     clientEmail: row.clientEmail || null,
-    tokenSaverSettings: parseJsonObject(row.tokenSaverSettings),
+    tokenSaverSettings,
+    limits,
   };
 }
 
@@ -60,6 +75,9 @@ export async function createApiKey(name, machineId, allowedEndpoints = [], optio
     ? options.clientEmail.trim().toLowerCase()
     : null;
   const tokenSaverSettings = parseJsonObject(options?.tokenSaverSettings);
+  if (options?.limits !== undefined) {
+    tokenSaverSettings._limits = normalizeKeyLimits(options.limits);
+  }
   const access = options?.access || { restricted: false, allow: [] };
   const apiKey = {
     id: uuidv4(),
@@ -72,6 +90,7 @@ export async function createApiKey(name, machineId, allowedEndpoints = [], optio
     allowedEndpoints,
     clientEmail,
     tokenSaverSettings,
+    limits: normalizeKeyLimits(tokenSaverSettings._limits),
   };
   const cols = keyAccessToColumns(access.restricted ? access : KEY_ACCESS_UNRESTRICTED);
   db.run(
@@ -110,6 +129,12 @@ export async function updateApiKey(id, data) {
       merged.tokenSaverSettings = {
         ...(current.tokenSaverSettings || {}),
         ...parseJsonObject(data.tokenSaverSettings),
+      };
+    }
+    if (data.limits !== undefined) {
+      merged.tokenSaverSettings = {
+        ...(merged.tokenSaverSettings || {}),
+        _limits: normalizeKeyLimits(data.limits),
       };
     }
     const cols = keyAccessToColumns(merged.access);

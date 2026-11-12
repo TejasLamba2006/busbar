@@ -6,6 +6,7 @@ import { Card, Button } from "@/shared/components";
 import Drawer from "@/shared/components/Drawer";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import { cn } from "@/shared/utils/cn";
+import { DetailBody } from "../requests/RequestLogClient";
 import {
   MAX_ROWS, statusKind, allocateLanes, mergeRows, visibleRows, axisTicks, formatTick, formatMs,
 } from "./timelineUtils";
@@ -24,7 +25,8 @@ const PRESETS = [
   { value: "900000", label: "15m" },
   { value: "3600000", label: "1h" },
 ];
-const KIND_BG = { ok: "bg-green-500", error: "bg-red-500", unknown: "bg-gray-400" };
+const noop = () => {};
+const KIND_BG ={ ok: "bg-green-500", error: "bg-red-500", unknown: "bg-gray-400" };
 const KIND_TEXT = { ok: "text-green-500", error: "text-red-500", unknown: "text-text-muted" };
 
 const Bar = memo(function Bar({ row, kind, left, width, lane, selected, onHover, onLeave, onSelect }) {
@@ -280,7 +282,7 @@ export default function RequestTimelineClient() {
         </div>
       )}
 
-      <Drawer isOpen={!!selected} onClose={() => setSelected(null)} title="Request" width="md">
+      <Drawer isOpen={!!selected} onClose={() => setSelected(null)} title="Request" width={selected?.detailId ? "xl" : "lg"}>
         {selected && (
           <div className="space-y-3 text-sm">
             {[
@@ -296,10 +298,21 @@ export default function RequestTimelineClient() {
             ].map(([k, v]) => (
               <div key={k}><span className="text-text-muted">{k}:</span> <span className="text-text-main">{v}</span></div>
             ))}
-            <Link href="/dashboard/usage" className="inline-flex items-center gap-1 text-brand-500 hover:underline">
-              <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-              Full request/response in Usage &rarr; Request Details
-            </Link>
+            {selected.detailId ? (
+              <DetailBody id={selected.detailId} maxJsonKB={64} onForbidden={noop} />
+            ) : (
+              <div className="text-xs text-text-muted">No stored payload for this request.</div>
+            )}
+            <div className="flex flex-wrap gap-3">
+              <Link href="/dashboard/console-log/requests" className="inline-flex items-center gap-1 text-brand-500 hover:underline">
+                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                Open in Requests tab
+              </Link>
+              <Link href="/dashboard/usage" className="inline-flex items-center gap-1 text-brand-500 hover:underline">
+                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                Full request/response in Usage &rarr; Request Details
+              </Link>
+            </div>
           </div>
         )}
       </Drawer>

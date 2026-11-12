@@ -1,3 +1,18 @@
+# 1.0.67 (2026-11-13)
+
+## Added
+- **Routing Resilience Pack**:
+  - Bare-model cross-provider auto-failover (`getBareModelFailoverTargets` in `src/sse/services/model.js` + `src/sse/handlers/chat.js`): bare model IDs (e.g. `crow-uncensored:free`, `deepseek-v4.1-flash:free`, `gpt-5.6-sol`) automatically resolve and fail over across all active providers serving that model.
+  - Per-account concurrency cap (`skipFullAccounts` in `src/sse/services/auth.js` + `getAccountActiveRequestCount` in `usageRepo.js`): skips connections at `maxConcurrent` when sibling accounts have capacity.
+  - Skip account cooldown on mid-stream transport drops (`499`, `terminated`, `socket hang up`, `other side closed`, `ECONNRESET`, `UND_ERR_SOCKET`).
+- **Per-API-Key USD Budget & RPM Rate Limits**: configurable `maxBudgetUsd`, `budgetResetPeriod` (`daily` / `monthly` / `total`), and `maxRequestsPerMinute` per API key (`apiKeysRepo.js`, `keyLimits.js`, `keyAccess.js`, `/api/keys`, and `KeyAccessControls.js` on `/dashboard/endpoint`).
+- **Logs UX Pack**:
+  - **Copy as cURL** button (`buildCurlSnippet`) in `Logs -> Requests` drawer.
+  - `Logs -> Timeline` swimlane bars link directly to their `requestDetails` record (`detailId`), and the full tabbed `DetailBody` payload viewer + copy controls are embedded in the Timeline drawer.
+
+## Fixes
+- **Client-owned connection filter** in `getBareModelFailoverTargets`: client connections must match `ownerKeyId` and `clientActive !== false` (matches `auth.js`; client connections carry `isActive === false` for Master routing).
+
 # 1.0.66 (2026-11-13)
 
 ## Added

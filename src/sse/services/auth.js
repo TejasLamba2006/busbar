@@ -6,9 +6,22 @@ import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 import { isClaudeExtraUsageAllowed, isClaudeExtraUsageState } from "@/lib/providers/claudeExtraUsage.js";
+import { getAccountActiveRequestCount } from "@/lib/usageDb";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+// Drop accounts at their maxConcurrent cap; keep all if every account is full.
+// ponytail: pending count is per-process (global), fine for single-instance gateway.
+export function skipFullAccounts(connections) {
+  if (!Array.isArray(connections) || connections.length <= 1) return connections;
+  const open = connections.filter((c) => {
+    const cap = Number(c?.maxConcurrent ?? c?.providerSpecificData?.maxConcurrent);
+    if (!Number.isFinite(cap) || cap <= 0) return true;
+    return getAccountActiveRequestCount(c.id) < cap;
+  });
+  return open.length > 0 ? open : connections;
+}
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
@@ -285,13 +298,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
     }
+    const candidateConnections = skipFullAccounts(availableConnections);
     if (connection) {
       // skip strategy
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
+      const byRecency = [...candidateConnections].sort((a, b) => {
         if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
         if (!a.lastUsedAt) return 1;
         if (!b.lastUsedAt) return -1;
@@ -311,7 +325,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       } else {
         // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        const sortedByOldest = [...candidateConnections].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
@@ -328,7 +342,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      connection = candidateConnections[0];
     }
 
     const psd = { ...(connection.providerSpecificData || {}) };
@@ -358,10 +372,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   if (
-    (Number(status) === 502 || Number(status) === 504) &&
-    /FUNCTION_INVOCATION_TIMEOUT|An error occurred with your deployment|DEPLOYMENT_|fetch connect timeout/i.test(String(errorText || ""))
+    Number(status) === 499 ||
+    ((Number(status) === 502 || Number(status) === 504) &&
+      /FUNCTION_INVOCATION_TIMEOUT|An error occurred with your deployment|DEPLOYMENT_|fetch connect timeout|stream_terminated|\bterminated\b|other side closed|socket hang up|ECONNRESET|UND_ERR_SOCKET/i.test(String(errorText || "")))
   ) {
-    log.warn("AUTH", `Skipping account lock for ${connectionId.slice(0, 8)}: relay/connect timeout (${status})`);
+    log.warn("AUTH", `Skipping account lock for ${connectionId.slice(0, 8)}: transient transport/stream drop (${status})`);
     return { shouldFallback: true, cooldownMs: 0 };
   }
   const connections = await getProviderConnections({ provider });

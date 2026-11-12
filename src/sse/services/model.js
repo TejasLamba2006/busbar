@@ -1,7 +1,8 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getModelAliases, getComboByName, getProviderNodes, getProviderConnections } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { FREE_PROVIDERS } from "@/shared/constants/providers.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -97,4 +98,50 @@ export async function getComboModels(modelStr) {
     return combo.models;
   }
   return null;
+}
+
+/**
+ * Bare model id (no provider prefix) -> "provider/model" targets on providers
+ * the caller can use. Primary inferred provider first. Empty = keep old routing.
+ * @returns {Promise<string[]>}
+ */
+export async function getBareModelFailoverTargets(modelStr, options = {}) {
+  if (!modelStr || typeof modelStr !== "string" || modelStr.includes("/")) return [];
+  if (await getComboByName(modelStr)) return [];
+  const aliases = await getModelAliases();
+  if (aliases?.[modelStr]) return [];
+
+  const conns = await getProviderConnections();
+  const activeProviders = new Set(
+    conns
+      .filter((c) => options.clientKeyId
+        ? c.providerSpecificData?.ownerKeyId === options.clientKeyId && c.providerSpecificData?.clientActive !== false
+        : c.isActive !== false && !c.providerSpecificData?.ownerKeyId)
+      .map((c) => c.provider)
+  );
+  for (const [id, entry] of Object.entries(FREE_PROVIDERS)) {
+    if (entry.noAuth) activeProviders.add(id);
+  }
+
+  const lower = modelStr.toLowerCase();
+  const listsModel = (entry) => {
+    const hit = (entry.models || []).find((m) => m.id?.toLowerCase() === lower);
+    return hit ? hit.id : null;
+  };
+
+  const primary = await getModelInfoCore(modelStr, aliases);
+  const ordered = [];
+  if (primary?.provider) ordered.push(primary.provider);
+  for (const entry of REGISTRY) if (!ordered.includes(entry.id)) ordered.push(entry.id);
+
+  const targets = [];
+  for (const providerId of ordered) {
+    if (!activeProviders.has(providerId)) continue;
+    const entry = REGISTRY.find((r) => r.id === providerId);
+    const matchedId = entry && listsModel(entry);
+    if (!matchedId) continue;
+    const target = `${providerId}/${matchedId}`;
+    if (!targets.includes(target)) targets.push(target);
+  }
+  return targets;
 }

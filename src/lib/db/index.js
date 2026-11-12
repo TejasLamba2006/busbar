@@ -65,6 +65,7 @@ export {
 // Usage
 export {
   statsEmitter, emitRequestError, getRequestErrors, trackPendingRequest, getActiveRequests,
+  getAccountActiveRequestCount,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
 } from "./repos/usageRepo.js";

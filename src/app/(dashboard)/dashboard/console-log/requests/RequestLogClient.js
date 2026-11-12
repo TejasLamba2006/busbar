@@ -6,6 +6,8 @@ import Drawer from "@/shared/components/Drawer";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import PayloadViewer, { isEmptyPayload } from "./PayloadViewer";
+import { buildCurlSnippet } from "./curlSnippet.js";
+export { buildCurlSnippet };
 
 const API = "/api/usage/request-log";
 const PAGE_SIZE = 50;
@@ -105,8 +107,9 @@ const Chip = ({ label, value }) => (
   </span>
 );
 
-function DetailBody({ id, maxJsonKB, onForbidden }) {
+export function DetailBody({ id, maxJsonKB, onForbidden }) {
   const { copied, copy } = useCopyToClipboard(1500);
+  const { copied: curlCopied, copy: copyCurl } = useCopyToClipboard(1500);
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("messages");
@@ -174,7 +177,15 @@ function DetailBody({ id, maxJsonKB, onForbidden }) {
       ) : (
         <div className="text-xs text-text-muted">No payload stored for this request.</div>
       )}
-      <div className="sticky bottom-0 -mx-6 -mb-6 flex justify-end border-t border-border-subtle bg-surface px-6 py-3">
+      <div className="sticky bottom-0 -mx-6 -mb-6 flex justify-end gap-2 border-t border-border-subtle bg-surface px-6 py-3">
+        <Button
+          size="sm"
+          variant="outline"
+          icon={curlCopied ? "check" : "terminal"}
+          onClick={() => copyCurl(buildCurlSnippet(detail, typeof window !== "undefined" ? window.location.origin : "http://localhost:20128"))}
+        >
+          Copy as cURL
+        </Button>
         <Button size="sm" variant="outline" icon={copied ? "check" : "content_copy"} onClick={() => copy(JSON.stringify(detail, null, 2))}>
           Copy all as JSON
         </Button>

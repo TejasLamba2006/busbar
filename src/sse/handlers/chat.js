@@ -11,7 +11,7 @@ import {
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings, getApiKeyByKey } from "@/lib/localDb";
 import { emitRequestError } from "@/lib/usageDb.js";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, getBareModelFailoverTargets } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import {
   shouldDefaultAllowClassifier,
@@ -235,6 +235,29 @@ async function handleChatInner(request, clientRawRequest = null, ctx = {}) {
           })
         : null,
     });
+  }
+
+  // Bare model id (no provider prefix): fail over across active providers that serve it.
+  if (!modelStr.includes("/")) {
+    const bareTargets = await getBareModelFailoverTargets(modelStr, { clientKeyId: clientVisibilityOwner });
+    const allowedBare = await filterAdapterModels(keyAccess, bareTargets, []);
+    const visibleBare = await filterEnabledModels(allowedBare, { comboName: modelStr, ownerKeyId: clientVisibilityOwner });
+    if (visibleBare.models.length > 1) {
+      log.info("CHAT", `Bare model "${modelStr}" → failover across ${visibleBare.models.join(", ")}`);
+      return handleComboChat({
+        body,
+        models: visibleBare.models,
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        log,
+        comboName: modelStr,
+        comboStrategy: "fallback",
+        sessionId,
+      });
+    }
+    if (visibleBare.models.length === 1 && visibleBare.models[0] !== `${requestedModelInfo.provider}/${requestedModelInfo.model}`) {
+      log.info("CHAT", `Bare model "${modelStr}" → routed to ${visibleBare.models[0]}`);
+      modelStr = visibleBare.models[0];
+    }
   }
 
   // Single model request — may still switch to a capacity-adapter model if the

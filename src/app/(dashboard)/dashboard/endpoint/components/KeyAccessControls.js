@@ -9,8 +9,18 @@ import PropTypes from "prop-types";
 import { Toggle, ModelSelectModal } from "@/shared/components";
 import { ENDPOINT_SCOPES } from "@/shared/constants/keyAccess.js";
 
-export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict, onEndpointsChange }) {
+export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict, onEndpointsChange, onLimitsChange }) {
   const endpoints = apiKey.allowedEndpoints || [];
+  const limits = apiKey.limits || { maxBudgetUsd: null, budgetResetPeriod: "daily", maxRequestsPerMinute: null };
+  const limitsEnabled = limits.maxBudgetUsd != null || limits.maxRequestsPerMinute != null;
+  const [limitDraft, setLimitDraft] = useState(limits);
+  const setDraft = (patch) => setLimitDraft((prev) => ({ ...prev, ...patch }));
+  const toNumberOrNull = (v) => (v === "" || v == null ? null : Number(v));
+  const saveLimits = () => onLimitsChange({
+    maxBudgetUsd: toNumberOrNull(limitDraft.maxBudgetUsd),
+    budgetResetPeriod: limitDraft.budgetResetPeriod,
+    maxRequestsPerMinute: toNumberOrNull(limitDraft.maxRequestsPerMinute),
+  });
   const toggleEndpoint = (id) => onEndpointsChange(endpoints.includes(id) ? endpoints.filter((e) => e !== id) : [...endpoints, id]);
   const access = apiKey.access || { restricted: false, allow: [] };
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -92,6 +102,63 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict,
           </div>
         )}
       </div>
+      <div className="mt-2" data-testid="key-budget-limits">
+        <Toggle
+          size="sm"
+          checked={limitsEnabled}
+          label="Budget & rate limits"
+          onChange={(checked) => {
+            if (checked) setLimitDraft({ ...limits, maxBudgetUsd: limits.maxBudgetUsd ?? 5, maxRequestsPerMinute: limits.maxRequestsPerMinute ?? 60 });
+            else onLimitsChange({ maxBudgetUsd: null, budgetResetPeriod: limits.budgetResetPeriod, maxRequestsPerMinute: null });
+          }}
+        />
+        {limitsEnabled && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-text-main">
+            <label className="flex items-center gap-1">
+              Max USD
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                placeholder="e.g. 5.00"
+                value={limitDraft.maxBudgetUsd ?? ""}
+                onChange={(e) => setDraft({ maxBudgetUsd: e.target.value })}
+                className="w-20 rounded border border-black/10 bg-transparent px-1 py-0.5 dark:border-white/10"
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Period
+              <select
+                value={limitDraft.budgetResetPeriod}
+                onChange={(e) => setDraft({ budgetResetPeriod: e.target.value })}
+                className="rounded border border-black/10 bg-transparent px-1 py-0.5 dark:border-white/10"
+              >
+                <option value="daily">daily</option>
+                <option value="monthly">monthly</option>
+                <option value="total">total</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              Max RPM
+              <input
+                type="number"
+                step="10"
+                min="1"
+                placeholder="e.g. 60"
+                value={limitDraft.maxRequestsPerMinute ?? ""}
+                onChange={(e) => setDraft({ maxRequestsPerMinute: e.target.value })}
+                className="w-20 rounded border border-black/10 bg-transparent px-1 py-0.5 dark:border-white/10"
+              />
+            </label>
+            <button
+              onClick={saveLimits}
+              className="rounded-xl border border-primary/30 bg-primary/10 px-2 py-0.5 font-medium text-primary hover:border-primary/50"
+            >
+              Save limits
+            </button>
+          </div>
+        )}
+      </div>
       {pickerOpen && (
         <ModelSelectModal
           isOpen={pickerOpen}
@@ -133,4 +200,5 @@ KeyAccessControls.propTypes = {
   onChange: PropTypes.func.isRequired,
   onRequestRestrict: PropTypes.func.isRequired,
   onEndpointsChange: PropTypes.func.isRequired,
+  onLimitsChange: PropTypes.func.isRequired,
 };

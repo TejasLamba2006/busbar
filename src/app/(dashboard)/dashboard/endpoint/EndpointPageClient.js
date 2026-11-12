@@ -696,6 +696,25 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  // Save a key's USD budget and RPM limits.
+  const handleUpdateKeyLimits = async (id, limits) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limits }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, limits: data.key.limits } : k));
+      } else {
+        console.log("Error updating key limits:", data.error || res.status);
+      }
+    } catch (error) {
+      console.log("Error updating key limits:", error);
+    }
+  };
+
   // Save a key's access (restricted flag + allow list).
   const handleUpdateKeyAccess = async (id, access) => {
     try {
@@ -1090,6 +1109,7 @@ export default function APIPageClient({ machineId }) {
                   <KeyAccessControls
                     apiKey={key}
                     onEndpointsChange={(list) => handleUpdateKeyEndpoints(key.id, list)}
+                    onLimitsChange={(limits) => handleUpdateKeyLimits(key.id, limits)}
                     onChange={(access) => handleUpdateKeyAccess(key.id, access)}
                     onRequestRestrict={() => setConfirmState({
                       title: "Restrict API Key",

@@ -75,6 +75,28 @@ export async function GET(request) {
       });
     }
 
+    // Link each bar to the requestDetails record it came from (same provider+model, end time within 15s).
+    // ponytail: nested scan, O(rows x details) per poll; fine at these limits, index by provider/model if it grows.
+    let details = [];
+    try {
+      details = db.all(
+        `SELECT id, timestamp, json_extract(data,'$.provider') AS provider, json_extract(data,'$.model') AS model FROM requestDetails WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT 1000`,
+        [new Date(sinceMs - 10000).toISOString()]
+      );
+    } catch { /* ignore */ }
+    for (const row of rows) {
+      if (!row.model) { row.detailId = null; continue; }
+      const end = row.ts + row.durationMs;
+      let best = null;
+      let bestGap = Infinity;
+      for (const d of details) {
+        if (d.provider !== row.provider || d.model !== row.model) continue;
+        const gap = Math.abs(Date.parse(d.timestamp) - end);
+        if (gap <= 15000 && gap < bestGap) { best = d; bestGap = gap; }
+      }
+      row.detailId = best?.id || null;
+    }
+
     return NextResponse.json({ rows, now });
   } catch (error) {
     console.error("[API ERROR] /api/usage/request-timeline failed:", error);

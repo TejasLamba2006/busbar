@@ -21,7 +21,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, allowedEndpoints, clientEmail, access } = body;
+    const { name, allowedEndpoints, clientEmail, access, limits } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -44,6 +44,7 @@ export async function POST(request) {
     const options = {};
     if (clientEmail !== undefined) options.clientEmail = clientEmail;
     if (checkedAccess) options.access = checkedAccess.value;
+    if (limits !== undefined) options.limits = limits;
     const apiKey = await createApiKey(name, machineId, endpoints, options);
 
     logActivity("key.created", `Created API key "${apiKey.name}"`, apiKey.name);
@@ -55,6 +56,7 @@ export async function POST(request) {
       allowedEndpoints: endpoints,
       clientEmail: apiKey.clientEmail,
       access: apiKey.access,
+      limits: apiKey.limits,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);
