@@ -1,3 +1,8 @@
+# 1.0.68 (2026-11-19)
+
+## Added
+- **Numes provider** (`numes`, `Numes`): free-tier provider (`https://api.numes.ai/api/v1/chat/completions`) with 338 pre-populated models (including 8 1M-context `:free` models, `z-ai/glm-5.3-flash:free` default), `/api/v1/key` key validation, `/api/v1/models` live catalog discovery, `passthroughModels: true`, and official provider icon (`public/providers/numes.png`).
+
 # 1.0.67 (2026-11-13)
 
 ## Added

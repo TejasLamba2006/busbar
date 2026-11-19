@@ -305,6 +305,7 @@ import p309 from "./inferx.js";
 import p310 from "./runcrate.js";
 import p311 from "./nace.js";
 import p312 from "./crowllm.js";
+import p313 from "./numes.js";
 export default [
   p0,
   p1,
@@ -611,4 +612,5 @@ export default [
   p310,
   p311,
   p312,
+  p313,
 ];

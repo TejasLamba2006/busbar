@@ -2196,5 +2196,10 @@
     "baseUrl": "https://crowllm.com/v1/chat/completions",
     "validateUrl": "https://crowllm.com/v1/models",
     "format": "openai"
+  },
+  "numes": {
+    "baseUrl": "https://api.numes.ai/api/v1/chat/completions",
+    "validateUrl": "https://api.numes.ai/api/v1/key",
+    "format": "openai"
   }
 }
