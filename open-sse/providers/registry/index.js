@@ -306,6 +306,7 @@ import p310 from "./runcrate.js";
 import p311 from "./nace.js";
 import p312 from "./crowllm.js";
 import p313 from "./numes.js";
+import p314 from "./sensenova-intl.js";
 export default [
   p0,
   p1,
@@ -613,4 +614,5 @@ export default [
   p311,
   p312,
   p313,
+  p314,
 ];

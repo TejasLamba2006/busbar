@@ -815,7 +815,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.322 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -833,7 +833,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.322 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -853,7 +853,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Version": "2023-06-01",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.322 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -1130,6 +1130,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > coze → headers (ap
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > crof → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > crowllm → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1547,6 +1566,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > freeaiapikey → hea
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > freebuff → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > freeinference → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1567,6 +1605,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > freeinference → he
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > freemodel-dev → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > freepi → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -2056,6 +2113,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > inceptionlabs → he
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > inference-net → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > inferx → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -3033,6 +3109,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > nube → headers (ap
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > numes → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > nvidia → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -3368,6 +3463,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > pioneer → headers 
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > pixrouter → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > plamo → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -3577,6 +3691,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > qwen-cloud-token-pla
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > qwen-web → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > regolo → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -3654,6 +3787,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > routesme → headers
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > routeway → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > runcrate → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -3768,6 +3920,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > seekai → headers (
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > sensenova → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > sensenova-intl → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -4173,6 +4344,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > unorouter → header
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > upstage → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > utim → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -5034,6 +5224,13 @@ exports[`GOLDEN buildUrl (default executor providers) > crof → url (stream + n
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > crowllm → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://crowllm.com/v1/chat/completions",
+  "stream": "https://crowllm.com/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > dahl → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://inference.dahl.global/v1/chat/completions",
@@ -5181,6 +5378,13 @@ exports[`GOLDEN buildUrl (default executor providers) > freeaiapikey → url (st
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > freebuff → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://www.codebuff.com/api/v1/chat/completions",
+  "stream": "https://www.codebuff.com/api/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > freeinference → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://freeinference.org/v1/chat/completions",
@@ -5192,6 +5396,13 @@ exports[`GOLDEN buildUrl (default executor providers) > freemodel-dev → url (s
 {
   "nonStream": "https://api.freemodel.dev/v1/chat/completions",
   "stream": "https://api.freemodel.dev/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > freepi → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.freepi.ai/v1/chat/completions",
+  "stream": "https://api.freepi.ai/v1/chat/completions",
 }
 `;
 
@@ -5360,6 +5571,13 @@ exports[`GOLDEN buildUrl (default executor providers) > inference-net → url (s
 {
   "nonStream": "https://api.inference.net/v1/chat/completions",
   "stream": "https://api.inference.net/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > inferx → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://model.inferx.net/endpoints/v1/chat/completions",
+  "stream": "https://model.inferx.net/endpoints/v1/chat/completions",
 }
 `;
 
@@ -5685,6 +5903,13 @@ exports[`GOLDEN buildUrl (default executor providers) > nube → url (stream + n
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > numes → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.numes.ai/api/v1/chat/completions",
+  "stream": "https://api.numes.ai/api/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > nvidia → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://integrate.api.nvidia.com/v1/chat/completions",
@@ -5804,6 +6029,13 @@ exports[`GOLDEN buildUrl (default executor providers) > pioneer → url (stream 
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > pixrouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://pixrouter.com/v1/chat/completions",
+  "stream": "https://pixrouter.com/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > plamo → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.platform.preferredai.jp/v1/chat/completions",
@@ -5881,6 +6113,13 @@ exports[`GOLDEN buildUrl (default executor providers) > qwen-cloud-token-plan �
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > qwen-web → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://chat.qwen.ai/api/v2/chat/completions",
+  "stream": "https://chat.qwen.ai/api/v2/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > regolo → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.regolo.ai/v1/chat/completions",
@@ -5913,6 +6152,13 @@ exports[`GOLDEN buildUrl (default executor providers) > routeway → url (stream
 {
   "nonStream": "https://api.routeway.ai/v1/chat/completions",
   "stream": "https://api.routeway.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > runcrate → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.runcrate.ai/v1/chat/completions",
+  "stream": "https://api.runcrate.ai/v1/chat/completions",
 }
 `;
 
@@ -5955,6 +6201,13 @@ exports[`GOLDEN buildUrl (default executor providers) > sensenova → url (strea
 {
   "nonStream": "https://token.sensenova.cn/v1/chat/completions",
   "stream": "https://token.sensenova.cn/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > sensenova-intl → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://token.sensenova.ai/v1/chat/completions",
+  "stream": "https://token.sensenova.ai/v1/chat/completions",
 }
 `;
 
@@ -6002,8 +6255,8 @@ exports[`GOLDEN buildUrl (default executor providers) > sumopod → url (stream 
 
 exports[`GOLDEN buildUrl (default executor providers) > synthetic → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://api.synthetic.new/v1/chat/completions",
-  "stream": "https://api.synthetic.new/v1/chat/completions",
+  "nonStream": "https://api.synthetic.new/openai/v1/chat/completions",
+  "stream": "https://api.synthetic.new/openai/v1/chat/completions",
 }
 `;
 
@@ -6102,6 +6355,13 @@ exports[`GOLDEN buildUrl (default executor providers) > upstage → url (stream 
 {
   "nonStream": "https://api.upstage.ai/v1/chat/completions",
   "stream": "https://api.upstage.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > utim → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.utim.dev/api/playground/chat",
+  "stream": "https://api.utim.dev/api/playground/chat",
 }
 `;
 

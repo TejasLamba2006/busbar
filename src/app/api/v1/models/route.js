@@ -18,6 +18,8 @@ import { getKeyAccessContext, extractClientApiKey, filterModelsListForKey, enfor
 import { getDisabledModelIds } from "@/sse/services/modelVisibility.js";
 import { getLiveCatalogSnapshot, requestLiveCatalogRefresh } from "@/lib/modelCatalog/liveCatalogs.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import { extractModelLimits } from "@/shared/utils/modelLimits.js";
 
 // Combo seats use UI aliases; the model registry also has transport aliases.
@@ -225,6 +227,12 @@ export async function buildModelsList(kindFilter, options = {}) {
   const { catalogs: liveCatalogs, missing } = await getLiveCatalogSnapshot(
     [...activeConnectionByProvider.values()],
   );
+  if (activeConnectionByProvider.has("commandcode") && !liveCatalogs.has("commandcode")) {
+    const cmcLive = await resolveCommandCodeModels();
+    if (cmcLive?.models?.length) {
+      liveCatalogs.set("commandcode", cmcLive.models.map(({ id, name }) => ({ id, name })));
+    }
+  }
   requestLiveCatalogRefresh(missing);
   const compatibleCatalogs = liveCatalogs;
 
@@ -523,6 +531,11 @@ export async function buildModelsList(kindFilter, options = {}) {
               ...(Number.isFinite(maxOutput) ? { output: maxOutput } : {}),
             };
           }
+          // Selectable reasoning levels (the set the dashboard picker shows) so clients
+          // can build their effort selector from the gateway instead of keeping a
+          // per-model table. Omitted when the model has no reasoning.
+          const thinkingLevels = getThinkingLevels(providerId, modelId);
+          if (Array.isArray(thinkingLevels) && thinkingLevels.length > 0) model.thinking_levels = thinkingLevels;
         }
         models.push(model);
       }

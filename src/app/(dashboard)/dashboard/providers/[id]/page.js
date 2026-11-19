@@ -14,7 +14,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { useNotificationStore } from "@/store/notificationStore";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
-import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { applyQoderModelNames, getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { filterModelRows } from "@/shared/utils/modelVisibility";
 import { filterAndSortModelRows } from "@/shared/utils/modelToolbar";
 import { showsModelCatalog, showsModelRefresh } from "@/shared/utils/providerModelDiscovery";
@@ -37,6 +37,10 @@ import WebLoginButton, { WEB_LOGIN_PROVIDERS } from "../components/WebLoginButto
 import MinimaxLeaseButton from "../components/MinimaxLeaseButton.js";
 
 const MCODE_LEASE_PROVIDERS = new Set(["minimax-code", "minimax-code-global"]);
+// Providers whose registry list is only an offline fallback: the dashboard
+// renders the live per-connection catalog from GET /api/providers/[id]/models
+// when one resolves, and falls back to the static rows otherwise.
+const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode"]);
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
@@ -209,9 +213,10 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = (providerId === "cursor" || providerId === "zed") && liveModels.length > 0
+  const isLiveCatalogProvider = providerInfo?.modelDiscovery === "live" || LIVE_MODEL_CATALOG_PROVIDERS.has(providerId);
+  const models = isLiveCatalogProvider && liveModels.length > 0
     ? liveModels
-    : staticModels;
+    : applyQoderModelNames(staticModels, customModels, getProviderAlias(providerId));
   const providerAlias = getProviderAlias(providerId);
 
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
@@ -558,7 +563,7 @@ export default function ProviderDetailPage() {
   // the provider id or connection list changes — no polling, no loop.
   // Cursor path is statement-identical to before; zed adds error surfacing.
   useEffect(() => {
-    const isLiveCatalog = providerInfo?.modelDiscovery === "live";
+    const isLiveCatalog = providerInfo?.modelDiscovery === "live" || LIVE_MODEL_CATALOG_PROVIDERS.has(providerId);
     if (!isLiveCatalog) {
       setLiveModels([]);
       return;
@@ -1995,11 +2000,9 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
-          onSave={async (modelId, caps, transport) => {
-            // caps.stt is a UI-only flag; the API accepts transports only on
-            // type "stt" records, so the save derives the type from it.
+          onSave={async (modelId, type, caps, transport) => {
             const fallbackType = hasLlmService ? "llm" : (providerInfo?.serviceKinds?.[0] || "llm");
-            await handleAddCustomModel(modelId, caps?.stt ? "stt" : fallbackType, providerStorageAlias, caps, transport);
+            await handleAddCustomModel(modelId, type === "stt" ? "stt" : fallbackType, providerStorageAlias, caps, transport);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}

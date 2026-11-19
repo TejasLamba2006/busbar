@@ -82,7 +82,22 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
-  return getModelInfoCore(modelStr, aliases);
+  return fallbackToClaudeOAuth(await getModelInfoCore(modelStr, aliases));
+}
+
+// A bare `claude-*` id infers provider "anthropic" (API key). When no anthropic
+// connection is active but a Claude OAuth connection is, use "claude" instead of
+// failing with "No active credentials for provider: anthropic" (same idea as the
+// Codex-only gpt-* rules in open-sse/services/model.js).
+// Filter out client-owned connections so Master checks don't count tenant accounts.
+async function fallbackToClaudeOAuth(info) {
+  if (info?.provider !== "anthropic") return info;
+  const hasActive = async (provider) =>
+    (await getProviderConnections({ provider, isActive: true }))
+      .some((c) => !c.providerSpecificData?.ownerKeyId);
+  if (await hasActive("anthropic")) return info;
+  if (!(await hasActive("claude"))) return info;
+  return { ...info, provider: "claude" };
 }
 
 /**

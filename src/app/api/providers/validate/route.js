@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ACCEPT_ENCODING } from "open-sse/utils/zstdCompat.js";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -53,6 +54,8 @@ async function probeWebProvider(provider, apiKey) {
 // Probe a media provider (tts/embedding/stt/image/video/systemone) using *Config.
 // Returns true if API key is accepted; null to skip (let default handler decide).
 async function probeMediaProvider(provider, apiKey) {
+  // Fal validates keys through /v1/models in the switch below (queue.fal.run is a generation endpoint).
+  if (provider === "fal-ai") return null;
   const p = AI_PROVIDERS[provider];
   if (!p) return null;
   const MEDIA_KINDS = new Set(["tts", "embedding", "stt", "image", "video", "music", "imageToText", "systemone"]);
@@ -292,6 +295,21 @@ export async function POST(request) {
       }
 
       switch (provider) {
+        case "fal-ai": {
+          // Match saved-connection tests: check auth without queueing a paid image.
+          const res = await fetch("https://api.fal.ai/v1/models?limit=1", {
+            headers: { Authorization: `Key ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = res.ok;
+          if (!isValid) {
+            error = res.status === 401 || res.status === 403
+              ? "Invalid API key"
+              : `Unable to verify API key (Fal returned ${res.status})`;
+          }
+          break;
+        }
+
         case "openai":
           const openaiRes = await fetch("https://api.openai.com/v1/models", {
             headers: { "Authorization": `Bearer ${apiKey}` },
@@ -436,7 +454,8 @@ export async function POST(request) {
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia":
-        case "runcrate": {
+        case "runcrate":
+        case "synthetic": {
           const endpoints = {
             ...Object.fromEntries(
               Object.entries(PROVIDERS).filter(([, t]) => t.validateUrl).map(([id, t]) => [id, t.validateUrl])
@@ -565,7 +584,7 @@ export async function POST(request) {
             method: "POST",
             headers: {
               Accept: "*/*",
-              "Accept-Encoding": "gzip, deflate, br, zstd",
+              "Accept-Encoding": ACCEPT_ENCODING,
               "Accept-Language": "en-US,en;q=0.9",
               "Cache-Control": "no-cache",
               "Content-Type": "application/json",

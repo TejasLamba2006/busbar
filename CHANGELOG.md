@@ -1,3 +1,27 @@
+# 1.0.69 (2026-11-20)
+
+## Upstream port (v0.5.117–v0.5.119)
+
+### Added
+- **Claude models & live discovery**: add `claude-fable-5-2` ($8/$40) and `claude-haiku-5-5` ($0.10/$0.50, 1M/128K), retire `claude-fable-5-1` from the Claude, GitHub Copilot, and OpenCode Zen catalogs (capabilities and pricing rows preserved), auto-track the advertised `claude-cli` npm version (floor `2.1.322`, pin with `CLAUDE_CLI_VERSION`), and list live Claude models via OAuth bearer (`Anthropic-Beta: oauth-2025-04-20`).
+- **Gemini 4 Carbon & pricing**: add `gemini-4-carbon` tiers (`low`/`medium`/`high` + bare alias) in Antigravity and `google/gemini-4-carbon` + `claude-fable-5-2` in CommandCode; bill `gemini-4-*` models at $2/$10 across CommandCode, Antigravity, and Vertex IDs.
+- **CommandCode live catalog**: resolve models dynamically from `GET /provider/v1/models?view=client` in the dashboard and `/v1/models`.
+- **Models & OpenCode variants**: expose `thinking_levels` in `/v1/models` and generate OpenCode effort variants from the same source.
+- **Providers & quota trackers**:
+  - Add **SenseNova International** (`sensenova-intl`) on `token.sensenova.ai`.
+  - Upgrade **Synthetic** (`synthetic` / `syn`) to `api.synthetic.new/openai/v1/chat/completions`, `/v2/quotas` key validation & Test button, and usage quota tracking.
+  - Add **ClinePass** quota tracker (5-hour / weekly / monthly plan windows) in Usage Limits.
+  - Show **MiniMax Code** desktop lease (`mcode-lease`) usage in Provider Limits and `/api/usage/[connectionId]`.
+- **Proxy Pools UI**: All/Enabled/Disabled status filter and Shift+click visible range selection.
+
+### Fixes
+- **Transport & Node floor**: pin `undici` to `^7.30.2` and declare `engines.node >= 20.18.1` in both `package.json` and `cli/package.json`; stop advertising `zstd` when the runtime cannot decode it (`zstdCompat.js`).
+- **OpenCode**: carry the selected proxy through `wreq-js` (`proxyCapable` adapter path, session cache keyed by proxy), retry free-lane overload 429s with backoff, and drop rejected cached session IDs.
+- **Codex & Codex Image**: advertise Codex CLI `0.167.1`, send GPT Image edits to native `images/edits`, and fall back to `gpt-5.6-terra` when the account rejects `gpt-6-sol`.
+- **Claude & Routing**: rename `tool_reference` blocks during tool cloaking; route bare `claude-*` IDs to Claude OAuth when no Master `anthropic` connection is active; catch missed Claude quota resets between auto-ping ticks; display Claude `output_tokens` in Request Details.
+- **Stream & Translator**: emit a single framed `[DONE]` sentinel in passthrough streams; always emit `tool_result.is_error` for strict Anthropic wire parsers (Zed); strip `~optional` from Antigravity tool schemas; show SearXNG in the combo Web Search picker.
+- **STT, Providers & UI**: use `undici` `FormData` for multipart STT uploads; validate Fal keys via `/v1/models`; harden NVIDIA NIM (drop rejected params, `dropClientMetadata`, 90s timeout, 15m model-scoped degraded cooldown); normalize Cookie-Editor JSON exports for `muse-web`; update Xiaomi Token Plan catalog; keep disabled Qoder catalog entries and sync display names; replace the custom model STT toggle with an explicit Model type selector; connect explicit input IDs to labels.
+
 # 1.0.68 (2026-11-19)
 
 ## Added
