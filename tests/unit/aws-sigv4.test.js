@@ -113,12 +113,46 @@ describe("AWS SigV4 signing", () => {
 });
 
 describe("AWS SigV4 query-string contract", () => {
-  it("refuses a URL with a query string rather than signing it wrongly", () => {
-    // SigV4 wants the query sorted by percent-encoded name with AWS escaping; URLSearchParams
-    // keeps insertion order and encodes a space as "+". Failing loudly beats a subtly invalid
-    // canonical request for a future caller.
-    expect(() => signAwsRequest({ ...BEDROCK_REQUEST, url: `${BEDROCK_REQUEST.url}?b=2&a=a%20b` })).toThrow(
-      /does not support query strings/,
-    );
+  it("matches the official AWS SigV4 GET query test vector regardless of parameter order", () => {
+    const expected =
+      "AWS4-HMAC-SHA256 " +
+      "Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, " +
+      "SignedHeaders=content-type;host;x-amz-date, " +
+      "Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7";
+
+    const inOrder = signAwsRequest({
+      method: "GET",
+      url: "https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" },
+      region: "us-east-1",
+      service: "iam",
+      credentials: CREDENTIALS,
+      date: SIGNING_DATE,
+    });
+    const reversed = signAwsRequest({
+      method: "GET",
+      url: "https://iam.amazonaws.com/?Version=2010-05-08&Action=ListUsers",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" },
+      region: "us-east-1",
+      service: "iam",
+      credentials: CREDENTIALS,
+      date: SIGNING_DATE,
+    });
+
+    expect(inOrder.Authorization).toBe(expected);
+    expect(reversed.Authorization).toBe(expected);
+  });
+
+  it("canonicalizes spaces as %20 rather than + when signing query strings", () => {
+    const withPercent20 = signAwsRequest({
+      ...BEDROCK_REQUEST,
+      url: `${BEDROCK_REQUEST.url}?b=2&a=a%20b`,
+    });
+    const withPlus = signAwsRequest({
+      ...BEDROCK_REQUEST,
+      url: `${BEDROCK_REQUEST.url}?a=a+b&b=2`,
+    });
+
+    expect(withPercent20.Authorization).toBe(withPlus.Authorization);
   });
 });

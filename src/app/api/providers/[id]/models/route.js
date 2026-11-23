@@ -18,6 +18,7 @@ import { parseVertexSaJson, refreshVertexToken } from "open-sse/services/tokenRe
 import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
+import { listBedrockInferenceProfiles } from "open-sse/executors/bedrock.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
 import { genericModelsConfig } from "@/lib/providerModelSync";
 
@@ -280,8 +281,27 @@ function buildQoderModelsResolver(providerId) {
   };
 }
 
+function buildBedrockModelsResolver(providerId) {
+  return {
+    customResolver: async (connection, options = {}) => {
+      const result = await listBedrockInferenceProfiles(
+        {
+          apiKey: connection.apiKey,
+          providerSpecificData: connection.providerSpecificData || {},
+        },
+        options.fetchUpstream,
+        { providerId, signal: options.signal }
+      );
+      if (result.error) return result;
+      return { models: result.models };
+    },
+  };
+}
+
 // Provider models endpoints configuration
 export const PROVIDER_MODELS_CONFIG = {
+  bedrock: buildBedrockModelsResolver("bedrock"),
+  "bedrock-xai": buildBedrockModelsResolver("bedrock-xai"),
   "muse": {
     url: "https://api.meta.ai/v1/models",
     method: "GET",

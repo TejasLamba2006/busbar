@@ -5,10 +5,8 @@ import { AWS_SIGV4 } from "../config/awsConstants.js";
 /**
  * AWS Signature Version 4 request signing.
  *
- * Hand-rolled on node:crypto rather than pulling @aws-sdk/signature-v4, because every request
- * we sign is a single POST with a JSON body and no query string — the canonicalisation cases
- * that make SigV4 error-prone (multi-value headers, query ordering) never arise here.
- * Verified against AWS's published test vector in tests/unit/aws-sigv4.test.js.
+ * Hand-rolled on node:crypto rather than pulling @aws-sdk/signature-v4.
+ * Verified against AWS's published test vectors in tests/unit/aws-sigv4.test.js.
  */
 
 /**
@@ -79,6 +77,20 @@ function canonicalizeHeaders(headers) {
 }
 
 /**
+ * Canonical query string per SigV4: percent-encode each name and value per RFC 3986
+ * (`%20` for space, never `+`), sort by encoded name then encoded value, join with `&`.
+ */
+function canonicalQueryString(searchParams) {
+  return Array.from(searchParams.entries())
+    .map(([name, value]) => [escapeUri(name), escapeUri(value)])
+    .sort(([ak, av], [bk, bv]) =>
+      ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : av > bv ? 1 : 0,
+    )
+    .map(([name, value]) => `${name}=${value}`)
+    .join("&");
+}
+
+/**
  * Sign a request and return the headers to send with it.
  *
  * @param {object} opts
@@ -111,17 +123,6 @@ export function signAwsRequest({
 
   const parsed = new URL(url);
 
-  // Query canonicalisation is deliberately NOT implemented. SigV4 requires the query sorted by
-  // percent-encoded name with AWS-style escaping, while URLSearchParams preserves insertion
-  // order and encodes a space as "+". Every caller here signs a query-less POST, so rather than
-  // ship a subtly wrong canonical request for some future caller, refuse the input outright.
-  if (parsed.search) {
-    throw new Error(
-      `AWS SigV4 signing does not support query strings (got ${JSON.stringify(parsed.search)}). ` +
-        "Move the parameters into the request body, or add proper query canonicalisation first.",
-    );
-  }
-
   const { amzDate, dateStamp } = formatSigningDate(date);
   const payloadHash = sha256Hex(body);
 
@@ -139,8 +140,7 @@ export function signAwsRequest({
   const canonicalRequest = [
     method.toUpperCase(),
     canonicalPath(parsed.pathname, doubleEncodePath),
-    // Always empty: the guard above rejects any URL carrying a query string.
-    "",
+    canonicalQueryString(parsed.searchParams),
     canonicalHeaders,
     signedHeaders,
     payloadHash,

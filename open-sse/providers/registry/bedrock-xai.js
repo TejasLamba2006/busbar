@@ -42,6 +42,7 @@ export default {
   },
   // Like `bedrock`: which ids an account can call varies by region and enabled inference
   // profiles, so anything is allowed through and only the known-live ones are listed.
+  modelDiscovery: "refresh",
   passthroughModels: true,
   models: [
     { id: "us.xai.grok-4.6", name: "Grok 4.6" },

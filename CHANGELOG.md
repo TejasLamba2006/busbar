@@ -1,3 +1,8 @@
+# 1.0.70 (2026-11-23)
+
+## Added
+- **AWS Bedrock live Refresh Models**: enable `modelDiscovery: "refresh"` for `bedrock` (`br`) and `bedrock-xai` (`brx`) via paginated `GET /inference-profiles` (`listBedrockInferenceProfiles`), supporting both Bearer (`ABSK...`) and SigV4 credentials (with SigV4 canonical query-string signing) and filtering active profiles by each provider's wire family.
+
 # 1.0.69 (2026-11-20)
 
 ## Upstream port (v0.5.117–v0.5.119)

@@ -47,6 +47,8 @@ export default {
   // cannot be invoked on demand, so the cross-region profile ids (`us.` / `global.` prefix) are
   // what belong here. This list was read from a live ListInferenceProfiles call, but which
   // profiles an account has ACTIVE varies by account and region, so any id is allowed through.
+  // passthroughModels is true; live Refresh Models queries ListInferenceProfiles.
+  modelDiscovery: "refresh",
   passthroughModels: true,
   models: [
     { id: "global.anthropic.claude-opus-4-6-v1", name: "Claude Opus 4.6 (Global)" },

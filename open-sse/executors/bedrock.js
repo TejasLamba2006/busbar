@@ -495,4 +495,82 @@ export async function probeBedrockCredentials(credentials, fetchFn) {
   };
 }
 
+const MAX_INFERENCE_PROFILE_PAGES = 10;
+
+/**
+ * List active Bedrock inference profiles for a connection, filtered to the provider's wire
+ * family (`anthropic.*` for `bedrock`, `xai`/`openai`/`moonshotai`/`zai` for `bedrock-xai`).
+ * Supports both Bearer (`ABSK...`) and SigV4 (static keys or profile/SSO) credentials.
+ *
+ * @returns {Promise<{models: Array<{id: string, name: string}>} | {error: string, status: number}>}
+ */
+export async function listBedrockInferenceProfiles(
+  credentials,
+  fetchFn,
+  { providerId = "bedrock", signal } = {},
+) {
+  let resolved;
+  try {
+    resolved = await resolveAwsCredentials(credentials);
+  } catch (error) {
+    return { error: error.message, status: 400 };
+  }
+
+  const wireFormat = PROVIDERS[providerId]?.format || FORMATS.OPENAI;
+  const familyPattern = BEDROCK.modelFamilyPatterns[wireFormat];
+  const seen = new Set();
+  const models = [];
+  let nextToken = "";
+
+  for (let page = 0; page < MAX_INFERENCE_PROFILE_PAGES; page++) {
+    const url =
+      `https://bedrock.${resolved.region}.amazonaws.com/inference-profiles?maxResults=100` +
+      (nextToken ? `&nextToken=${encodeURIComponent(nextToken)}` : "");
+    const headers = resolved.bearerToken
+      ? { Accept: "application/json", Authorization: `Bearer ${resolved.bearerToken}` }
+      : signAwsRequest({
+          method: "GET",
+          url,
+          headers: { Accept: "application/json" },
+          region: resolved.region,
+          service: BEDROCK.service,
+          credentials: resolved,
+        });
+
+    const res = await fetchFn(url, {
+      method: "GET",
+      headers,
+      redirect: "error",
+      signal,
+    });
+    if (!res.ok) {
+      return {
+        error: `Failed to fetch Bedrock inference profiles: ${res.status}`,
+        status: res.status,
+      };
+    }
+
+    const data = await res.json();
+    for (const item of data?.inferenceProfileSummaries || []) {
+      const id =
+        typeof item?.inferenceProfileId === "string"
+          ? item.inferenceProfileId.trim()
+          : "";
+      if (!id || seen.has(id)) continue;
+      if ((item.status || "ACTIVE").toUpperCase() !== "ACTIVE") continue;
+      if (familyPattern && !familyPattern.test(id)) continue;
+      seen.add(id);
+      models.push({ id, name: item.inferenceProfileName || id });
+    }
+
+    nextToken =
+      typeof data?.nextToken === "string" && data.nextToken
+        ? data.nextToken
+        : "";
+    if (!nextToken) break;
+  }
+
+  return { models };
+}
+
 export default BedrockExecutor;
