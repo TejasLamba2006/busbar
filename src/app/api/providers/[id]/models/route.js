@@ -19,8 +19,39 @@ import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_V
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import { listBedrockInferenceProfiles } from "open-sse/executors/bedrock.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
 import { genericModelsConfig } from "@/lib/providerModelSync";
+
+/**
+ * Fill in what the provider omitted, in the field names the pickers already read.
+ *
+ * Live catalogs are inconsistent: commandcode reports isVL / isReasoning /
+ * contextLength, cursor and zed report almost nothing. Consumers that seed a
+ * model's capabilities (CLI-tool cards) otherwise fall back to a text-only,
+ * non-reasoning default for every live model. The local registry already knows
+ * most of it, so only fill gaps and never overwrite what the provider said.
+ */
+const withModelCapabilities = (provider, models) => {
+  if (!Array.isArray(models)) return [];
+
+  return models.map((model) => {
+    const id = model?.id || model?.slug || model?.model;
+    if (!id) return model;
+
+    const caps = getCapabilitiesForModel(provider, id);
+    const levels = getThinkingLevels(provider, id);
+
+    return {
+      ...model,
+      contextLength: model.contextLength ?? caps.contextWindow,
+      isVL: model.isVL ?? caps.vision,
+      isReasoning: model.isReasoning ?? caps.reasoning,
+      ...(Array.isArray(levels) && levels.length > 0 ? { thinking_levels: levels } : {}),
+    };
+  });
+};
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -786,7 +817,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models,
+        models: withModelCapabilities(connection.provider, models),
         authoritative: true,
       });
     }
@@ -828,7 +859,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models,
+        models: withModelCapabilities(connection.provider, models),
         authoritative: true,
       });
     }
@@ -854,7 +885,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: result.models,
+        models: withModelCapabilities(connection.provider, result.models),
         authoritative: !result.warning,
         ...(result.warning ? { warning: result.warning } : {})
       });
@@ -905,7 +936,7 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       provider: connection.provider,
       connectionId: connection.id,
-      models,
+      models: withModelCapabilities(connection.provider, models),
       authoritative: true,
     });
   } catch (error) {

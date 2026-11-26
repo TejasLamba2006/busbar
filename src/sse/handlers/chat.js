@@ -451,6 +451,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ponytailLevel: effectiveSettings.ponytailLevel || "full",
       customPromptEnabled: !!effectiveSettings.customPromptEnabled,
       customPrompt: effectiveSettings.customPrompt || "",
+      reaAllowEnabled: !!effectiveSettings.reaAllowEnabled,
       pxpipeEnabled: !!effectiveSettings.pxpipeEnabled,
       pxpipeMinChars: effectiveSettings.pxpipeMinChars,
       pxpipeTimeoutMs: effectiveSettings.pxpipeTimeoutMs,

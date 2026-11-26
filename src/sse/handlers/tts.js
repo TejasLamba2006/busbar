@@ -161,7 +161,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const attemptStart = Date.now();
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, options: body });
 
     if (result.success) {
       const responsePayload = await summarizeMediaResponse(result.response);

@@ -63,7 +63,7 @@ describe("provider model listing authentication", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.models).toEqual([{ id: "claude-opus-5-5", display_name: "Claude Opus 5.5" }]);
+    expect(body.models).toMatchObject([{ id: "claude-opus-5-5", name: "Claude Opus 5.5" }]);
     expect(stubs.calls[0].options.headers.Authorization).toBe("Bearer oauth-secret");
     expect(stubs.calls[0].options.headers).not.toHaveProperty("x-api-key");
     expect(JSON.stringify(body)).not.toContain("oauth-secret");
@@ -83,7 +83,7 @@ describe("provider model listing authentication", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.models).toEqual([{ id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" }]);
+    expect(body.models).toMatchObject([{ id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" }]);
     expect(stubs.calls[0].url).toContain("v1internal:fetchAvailableModels");
     expect(stubs.calls[0].options.headers.Authorization).toBe("Bearer antigravity-secret");
     expect(JSON.parse(stubs.calls[0].options.body)).toEqual({ project: "project-1" });

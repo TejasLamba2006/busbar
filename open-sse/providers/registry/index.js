@@ -307,6 +307,9 @@ import p311 from "./nace.js";
 import p312 from "./crowllm.js";
 import p313 from "./numes.js";
 import p314 from "./sensenova-intl.js";
+import p315 from "./opendesign-go.js";
+import p316 from "./deeprelay.js";
+import p317 from "./qwencloud.js";
 export default [
   p0,
   p1,
@@ -615,4 +618,7 @@ export default [
   p312,
   p313,
   p314,
+  p315,
+  p316,
+  p317,
 ];

@@ -91,6 +91,7 @@ vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
 }));
 vi.mock("../../open-sse/handlers/systemoneCore.js", () => ({
   handleSystemoneCore: mocks.handleSystemoneCore,
+  validateSystemonePayload: () => null,
 }));
 
 import { getProviderAlias, resolveProviderId } from "@/shared/constants/providers";

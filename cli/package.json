@@ -1,6 +1,6 @@
 {
   "name": "busbar-ai",
-  "version": "1.0.70",
+  "version": "1.0.71",
   "description": "Fast, zero-bloat local LLM gateway and multiplexer for 290+ providers",
   "author": {"name": "Tejas Lamba", "url": "https://tejas.is-a.dev/"},
   "homepage": "https://github.com/TejasLamba2006/busbar#readme",
@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "enquirer": "^2.4.1",
-    "node-forge": "^1.3.3",
+    "node-forge": "^1.4.3",
     "node-machine-id": "^1.1.12",
     "react": "19.2.1",
     "react-dom": "19.2.1",
@@ -56,5 +56,9 @@
   "devDependencies": {
     "esbuild": "^0.25.12",
     "nodemon": "^3.1.14"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1",
+    "brace-expansion": "^5.0.13"
   }
 }

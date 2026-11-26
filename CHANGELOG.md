@@ -1,3 +1,25 @@
+# 1.0.71 (2026-11-26)
+
+## Upstream port (v0.5.120-v0.5.123)
+
+### Added
+- **Antigravity**: Gemini 4 Hydrogen (low/medium/high/xhigh + bare alias), CONTINUATION hops for `max_tokens` above 64K, 2.33.0 agent identity, per-account `fetchAvailableModels` catalog, Gemini 4 Neon family.
+- **Kiro**: CreateResponse (`/v1/responses`) fallback on 429 `USER_REQUEST_RATE_EXCEEDED` (`NINEROUTER_KIRO_CREATE_RESPONSE=auto|always|off`).
+- **Providers**: OpenDesign Go and DeepRelay (quota trackers), QwenCloud; Synthetic quota now reports subscription, hourly search and weekly pool.
+- **Codex**: GPT 6.2 Sol and Astra with `[1m]` variants.
+- **ElevenLabs**: current TTS models and `scribe_v3`, live TTS list with 24h per-key cache, `voice`/`response_format`/`language`/`voice_settings` passthrough.
+- **NVIDIA NIM**: 8 embedding models and `input_type` support.
+- **Token Saver**: REA allow prompt toggle (off by default).
+
+### Fixes
+- **Kiro**: identify as Kiro IDE 1.4.154 everywhere (old identity rejected with "no longer supported").
+- **Antigravity**: model id / thinking tier corrections, fake-429 fixes, Hub UA shape preserved.
+- **Cloudflare AI**: drop models retired 2026-11-20 (HTTP 410), add replacements and `clef`/`clef-omni`/`clairic` System One models; System One result envelope unwrapped.
+- **Translator**: strip `x-anthropic-billing-header` from system text so prompt cache is not split.
+- **Alibaba Token Plan / Kimi / Mistral / Qoder / OpenCode Go / Pi / Proxy Pools**: see upstream v0.5.120-v0.5.123 notes.
+- **Usage charts**: `T` (trillion) token unit.
+- **Deps**: `next` ^16.4.6, `node-forge` ^1.4.3, `minimatch`/`brace-expansion` overrides in CLI.
+
 # 1.0.70 (2026-11-23)
 
 ## Added

@@ -35,7 +35,11 @@ function comboSeatCapabilities(seat) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
-  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
+  // Strip a trailing thinking-level override like "(max)" or "(high)" before the
+  // capability lookup — it is not part of the model id. Otherwise the lookup
+  // misses the provider-scoped catalog entry and falls through to a default.
+  const model = seat.slice(slash + 1).replace(/\([^()]+\)\s*$/, "").trim();
+  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, model);
 }
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
