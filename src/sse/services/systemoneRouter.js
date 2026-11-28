@@ -27,7 +27,7 @@ import {
  * @param {number} [opts.timeoutMs=DEFAULT_SYSTEMONE_TIMEOUT_MS] - Hard ceiling for router evaluation
  * @returns {Promise<{ choice: string, confidence: number|null, probabilities: Record<string, number>|null } | null>}
  */
-export async function resolveSmartChoice({
+async function resolveWithRouter({
   body,
   models,
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
@@ -145,4 +145,30 @@ export async function resolveSmartChoice({
     log?.warn?.("COMBO", `smart-router: evaluation aborted (${err?.message || String(err)})`);
     return null;
   }
+}
+
+/**
+ * Router models to try in order. `routerModel` may be one id, a comma-separated list
+ * ("oc/jev-1.13-free,ts/jev-latest") or an array; blanks and duplicates are dropped.
+ * Comma-separated keeps the stored setting a plain string for the dashboard.
+ */
+export function parseRouterModels(routerModel) {
+  const raw = Array.isArray(routerModel) ? routerModel : typeof routerModel === "string" ? routerModel.split(",") : [];
+  const list = [...new Set(raw.map((m) => (typeof m === "string" ? m.trim() : "")).filter(Boolean))];
+  return list.length ? list : [DEFAULT_SYSTEMONE_ROUTER_MODEL];
+}
+
+/**
+ * Same contract as before, plus fallback: if a router model gives no decision (rate limit,
+ * no credentials, timeout, error), the next one in the list is tried. Still returns null
+ * when none decide, so combo dispatch fails open to standard ordering.
+ */
+export async function resolveSmartChoice({ routerModel, log, ...rest }) {
+  const routers = parseRouterModels(routerModel);
+  for (let i = 0; i < routers.length; i++) {
+    const route = await resolveWithRouter({ ...rest, routerModel: routers[i], log });
+    if (route) return route;
+    if (i < routers.length - 1) log?.info?.("COMBO", `smart-router: "${routers[i]}" gave no decision, trying "${routers[i + 1]}"`);
+  }
+  return null;
 }
