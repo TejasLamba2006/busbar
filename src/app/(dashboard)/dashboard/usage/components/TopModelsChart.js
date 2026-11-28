@@ -20,8 +20,6 @@ import {
 
 const COLORS = ["#6366f1", "#14b8a6", "#f59e0b", "#ef4444", "#8b5cf6"];
 
-const fmtTokens = formatCompactTokens;
-
 const truncate = (s, max = 22) => (s && s.length > max ? s.slice(0, max) + "…" : s || "");
 
 export default function TopModelsChart({ byModel }) {
@@ -40,7 +38,7 @@ export default function TopModelsChart({ byModel }) {
       .slice(0, 5);
   }, [byModel, viewMode]);
 
-  const fmt = viewMode === "tokens" ? fmtCompactTokens : String;
+  const fmt = viewMode === "tokens" ? formatCompactTokens : String;
   const label = viewMode === "tokens" ? "Tokens" : "Requests";
 
   return (

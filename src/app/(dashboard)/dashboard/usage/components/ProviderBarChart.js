@@ -20,8 +20,6 @@ import {
 
 const COLORS = ["#6366f1", "#14b8a6", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#10b981", "#f97316"];
 
-const fmtTokens = formatCompactTokens;
-
 export default function ProviderBarChart({ byProvider }) {
   const [viewMode, setViewMode] = useState("tokens");
 
@@ -37,7 +35,7 @@ export default function ProviderBarChart({ byProvider }) {
       .sort((a, b) => b[viewMode] - a[viewMode]);
   }, [byProvider, viewMode]);
 
-  const fmt = viewMode === "tokens" ? fmtCompactTokens : String;
+  const fmt = viewMode === "tokens" ? formatCompactTokens : String;
   const label = viewMode === "tokens" ? "Tokens" : "Requests";
 
   return (

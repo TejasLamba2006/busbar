@@ -1,3 +1,13 @@
+# 1.0.73 (2026-11-29)
+
+## Features
+- **Smart combo router fallback**: `routerModel` on a smart combo now accepts a comma-separated list or an array of System One models. If a router gives no decision (rate limit, no credentials, upstream error, timeout), the next one is tried. If none decide, dispatch still falls back to the combo's standard order. A single model behaves as before.
+
+# 1.0.72 (2026-11-28)
+
+## Fixes
+- **Usage charts**: fix a browser crash when loading the overview and its provider and model breakdowns.
+
 # 1.0.71 (2026-11-26)
 
 ## Upstream port (v0.5.120-v0.5.123)
